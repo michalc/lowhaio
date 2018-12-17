@@ -2,6 +2,8 @@
 
 A lightweight and dependency-free Python asyncio HTTP/1.1 client. Rather than abstracting away the HTTP protocol or aspects of the connection, the provided API is a small suite of 6 utility functions that exposes low-level behaviour. This provides both flexibility and minimisation of unnecessary code and processing in the production application. Clients can of course wrap lowhaio calls in their own functions to reduce duplication or provide abstractions as they see fit.
 
+lowhaio is HTTPS-first: non-encrypted HTTP connections are possible, but require a bit more client code.
+
 
 ## Responsibilities of lowhaio
 
@@ -55,7 +57,7 @@ async with \
 
 - Apart from where necessary to interact with Python APIs, classes are not used.
 - Internal data structures are exposed wherever possible to provide flexibility, reduce unnecessary indirection, and to avoid hidden state.
-- Separate functions are preferred over boolean-esque options passed to fewer function to avoid unnecessary dynamic behaviour.
+- All code in the client is required for all uses of the client: nothing is unnecessary. HTTP and HTTPS require different code paths, and so HTTPS is chosen to be supported out of the box over unencrypted HTTP.
 
 
 ## Recipies
@@ -69,3 +71,18 @@ async with \
 ### Chunked transfer encoding
 
 ### Compressed content encoding
+
+### Non-encrypted connections
+
+```python
+class NonSSLContext():
+    def wrap_socket(self, socket):
+        socket.__class__ = NonSSLSocket
+
+class NonSSLSocket(socket.socket):
+    def unwrap_socket(self):
+        socket.__class__ = socket.socket
+
+async with lowhaio.socket(pool, host, port, NonSSLContext(),...):
+    ...
+```
