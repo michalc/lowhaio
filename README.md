@@ -1,6 +1,6 @@
 # lowhaio
 
-A lightweight and dependency-free Python asyncio HTTP/1.1 client. Rather than abstracting away the HTTP protocol or aspects of the connection, the provided API is a small suite of 7 utility functions that exposes low-level behaviour. This provides both flexibility and minimisation of unnecessary code and processing in the production application. Clients can of course wrap lowhaio calls in their own functions to reduce duplication or provide abstractions as they see fit.
+A lightweight and dependency-free Python asyncio HTTP/1.1 client. Rather than abstracting away the HTTP protocol or aspects of the connection, the provided API is a small suite of 6 utility functions that exposes low-level behaviour. This provides both flexibility and minimisation of unnecessary code and processing in the production application. Clients can of course wrap lowhaio calls in their own functions to reduce duplication or provide abstractions as they see fit.
 
 
 ## Responsibilities of lowhaio
