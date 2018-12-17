@@ -35,7 +35,7 @@ port = 443
 ip_address = await loop.getaddrinfo(host, port)
 async with \
         lowhaio.pool(max_connections=20, max_sequential_connections=20, max_connection_idle_time=5, socket_available_timeout=20) as pool, \
-        lowhaio.socket(pool, host, port, ssl_context) as socket:
+        lowhaio.socket(pool, ip_address, port, ssl_context) as socket:
 
     await lowhaio.send(pool, socket, chunk_size=4096, timeout=10,
         b'POST /path HTTP/1.1\r\n'
