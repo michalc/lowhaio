@@ -10,7 +10,7 @@ lowhaio is HTTPS-first: non-encrypted HTTP connections are possible, but require
 - Connection pooling
 - Creation of TLS/SSL connections, i.e. for HTTPS
 - Streaming of requests and responses
-- Parsing of HTTP headers
+- Parsing of HTTP headers, and closing connections on "Connection: close" headers.
 
 While many uses do not need requests or responses streamed, it's not possible to provide a meaningful streaming API on top of a non-streaming API, so this is deliberately provided out-of-the-box by lowhaio.
 
@@ -34,29 +34,31 @@ host = b'www.example.com'
 port = 443
 ip_address = await loop.getaddrinfo(host, port)
 async with \
-        lowhaio.pool(max_connections=20, max_sequential_connections=20, max_connection_idle_time=5, socket_available_timeout=20) as pool, \
-        lowhaio.socket(pool, ip_address, port, ssl_context) as socket:
+        lowhaio.connection_pool(max=20, max_wait_connection_seconds=20, max_requests_per_connection=20, max_idle_seconds=5, max_wait_send_recv_seconds=10, chunk_bytes=4096) as pool, \
+        pool.connection(ip_address, port, ssl_context) as connection:
 
-    await lowhaio.send(pool, socket, chunk_size=4096, timeout=10,
+    await pool.send(connection,
         b'POST /path HTTP/1.1\r\n'
         b'Host: www.w3.org\r\n'
         b'\r\n'
         b'Body'
     )
 
-    code = await lowhaio.recv_status_line(pool, socket, chunk_size=4096, timeout=10):
-    async for header_key, header_value in lowhaio.recv_headers(pool, socket, remainder, chunk_size=4096, timeout=10):
+    code = await pool.recv_status_line(connection):
+    async for header_key, header_value in pool.recv_headers(connection):
         # Do something with the header values
 
-    async for body_bytes in lowhaio.recv_body(pool, socket, chunk_size=4096, timeout=10):
+    async for body_bytes in pool.recv_body(connection):
         # Save the body bytes
 ```
 
 
 ## Design
 
-- Apart from where necessary to interact with Python APIs, classes are not used.
-- Internal data structures are exposed wherever possible to provide flexibility, reduce unnecessary indirection, and to avoid hidden state.
+Two main principles inform the design of lowhaio.
+
+- Overal understanding of what the final application is doing is a primary concern, and this covers _both_ lowhaio client code and lowhaio internal code. Making an elegant API is _not_ significantly prioritised over a overal understanding what the application is doing in terms of data transformations or bytes sent/received. For example, the API has changed during development because it meant the internal code ended up with unnecessary data transformations/movement.
+
 - All code in the client is required for all uses of the client: nothing is unnecessary. HTTP and HTTPS require different code paths, and so HTTPS is chosen to be supported out of the box over unencrypted HTTP.
 
 
