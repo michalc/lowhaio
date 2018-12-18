@@ -44,11 +44,11 @@ async with \
         b'Body'
     )
 
-    code = await pool.recv_status_line(connection):
-    async for header_key, header_value in pool.recv_headers(connection):
+    code, cursor = await pool.recv_status_line(connection):
+    async for header_key, header_value, cursor in pool.recv_headers(connection, cursor):
         # Do something with the header values
 
-    async for body_bytes in pool.recv_body(connection):
+    async for body_bytes in pool.recv_body(connection, cursor):
         # Save the body bytes
 ```
 
