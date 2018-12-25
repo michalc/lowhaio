@@ -48,7 +48,7 @@ async def server(loop, client_handler):
         # Client task is created immediately after socket is connected, in a
         # sync function and without a yield, so cleanup always happens, even
         # if the server task is immediately cancelled
-        task = loop.create_task(client_handler())
+        task = loop.create_task(client_handler(sock))
         client_tasks.add(task)
 
         def done(_):
@@ -113,7 +113,7 @@ class TestBasic(unittest.TestCase):
 
         server_wait_forever = asyncio.Future()
 
-        async def server_client():
+        async def server_client(_):
             await server_wait_forever
 
         server_task = await server(loop, server_client)
@@ -127,13 +127,31 @@ class TestBasic(unittest.TestCase):
         await asyncio.sleep(0)
 
     @async_test
-    async def test_server_close_before_client_raises(self):
+    async def test_server_close_by_cancel_before_client_raises(self):
         loop = asyncio.get_running_loop()
 
         server_wait_forever = asyncio.Future()
 
-        async def server_client():
+        async def server_client(_):
             await server_wait_forever
+
+        server_task = await server(loop, server_client)
+
+        with self.assertRaises(OSError):
+            async with \
+                    connection_pool(loop) as pool, \
+                    pool.connection('127.0.0.1', 8080) as connection:
+                server_task.cancel()
+                while True:
+                    connection.sock.send(b'-')
+                    await asyncio.sleep(0)
+
+    @async_test
+    async def test_server_close_by_close_before_client_raises(self):
+        loop = asyncio.get_running_loop()
+
+        async def server_client(sock):
+            sock.close()
 
         server_task = await server(loop, server_client)
 
