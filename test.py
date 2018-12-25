@@ -31,16 +31,10 @@ async def server(loop, client_handler):
     server_sock.bind(('', 8080))
     server_sock.listen(IPPROTO_TCP)
 
-    listening = asyncio.Future()
+    listening = asyncio.Event()
 
-    def on_listening(success):
-        if listening.done():
-            return
-
-        if success:
-            listening.set_result(None)
-        else:
-            listening.set_exception(Exception())
+    def on_listening():
+        listening.set()
 
     client_tasks = set()
 
@@ -72,7 +66,7 @@ async def server(loop, client_handler):
             await asyncio.sleep(0)
 
     task = loop.create_task(server_task())
-    await listening
+    await listening.wait()
     return task, server_sock
 
 
@@ -85,10 +79,6 @@ async def sock_accept(loop, server_sock, on_listening, create_client_task):
             sock, _ = server_sock.accept()
         except BlockingIOError:
             pass
-        except BaseException as exception:
-            on_listening(False)
-            if not done.cancelled():
-                done.set_exception(exception)
         else:
             sock.setblocking(False)
             create_client_task(sock)
@@ -96,7 +86,7 @@ async def sock_accept(loop, server_sock, on_listening, create_client_task):
                 done.set_result(None)
 
     accept()
-    on_listening(True)
+    on_listening()
     loop.add_reader(fileno, accept)
 
     try:
