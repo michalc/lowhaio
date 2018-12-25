@@ -11,6 +11,7 @@ from socket import (
 
 
 ConnectionPool = namedtuple('ConnectionPool', ('connection'))
+Connection = namedtuple('Connection', ('sock'))
 
 
 @asynccontextmanager
@@ -24,12 +25,11 @@ async def connection_pool(loop):
         await loop.sock_connect(sock, (ip_address, port))
 
         try:
-            yield
+            yield Connection(sock)
         finally:
             try:
                 sock.shutdown(SHUT_RDWR)
-            except OSError:
-                pass
-            sock.close()
+            finally:
+                sock.close()
 
     yield ConnectionPool(connection=connection)
