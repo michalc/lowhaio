@@ -63,7 +63,7 @@ async def server(loop, client_handler):
 
     async def server_task():
         try:
-            while True:
+            while server_sock.fileno() != -1:
                 await sock_accept(loop, server_sock, on_listening, create_client_task)
         finally:
             server_sock.close()
@@ -73,7 +73,7 @@ async def server(loop, client_handler):
 
     task = loop.create_task(server_task())
     await listening
-    return task
+    return task, server_sock
 
 
 async def sock_accept(loop, server_sock, on_listening, create_client_task):
@@ -116,7 +116,7 @@ class TestConnections(unittest.TestCase):
         async def server_client(_):
             await server_wait_forever
 
-        server_task = await server(loop, server_client)
+        server_task, _ = await server(loop, server_client)
 
         async with \
                 connection_pool(loop) as pool, \
@@ -135,7 +135,7 @@ class TestConnections(unittest.TestCase):
         async def server_client(_):
             await server_wait_forever
 
-        server_task = await server(loop, server_client)
+        server_task, _ = await server(loop, server_client)
 
         with self.assertRaises(OSError):
             async with \
@@ -147,13 +147,13 @@ class TestConnections(unittest.TestCase):
                     await asyncio.sleep(0)
 
     @async_test
-    async def test_server_close_by_close_before_client_raises(self):
+    async def test_server_close_by_client_sock_close_before_client_raises(self):
         loop = asyncio.get_running_loop()
 
         async def server_client(sock):
             sock.close()
 
-        server_task = await server(loop, server_client)
+        server_task, _ = await server(loop, server_client)
 
         with self.assertRaises(OSError):
             async with \
@@ -163,3 +163,23 @@ class TestConnections(unittest.TestCase):
                 while True:
                     connection.sock.send(b'-')
                     await asyncio.sleep(0)
+
+    @async_test
+    async def test_server_close_by_server_sock_close_before_client_raises(self):
+        loop = asyncio.get_running_loop()
+
+        async def server_client(_):
+            pass
+
+        server_task, server_sock = await server(loop, server_client)
+
+        with self.assertRaises(OSError):
+            async with connection_pool(loop) as pool:
+                async with pool.connection('127.0.0.1', 8080):
+                    pass
+
+                server_sock.close()
+                await pool.connection('127.0.0.1', 8080).__aenter__()
+
+        server_task.cancel()
+        await asyncio.sleep(0)
