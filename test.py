@@ -80,42 +80,31 @@ async def sock_accept(loop, server_sock, on_listening, create_client_task):
     fileno = server_sock.fileno()
     done = asyncio.Future()
 
-    def accept_without_reader():
+    def accept():
         try:
             sock, _ = server_sock.accept()
         except BlockingIOError:
-            loop.add_reader(fileno, accept_with_reader)
-            on_listening(True)
+            pass
         except BaseException as exception:
             on_listening(False)
-            done.set_exception(exception)
-        else:
-            sock.setblocking(False)
-            on_listening(True)
-            create_client_task(sock)
-            done.set_result(None)
-
-    def accept_with_reader():
-        try:
-            sock, _ = server_sock.accept()
-        except BaseException as exception:
-            loop.remove_reader(fileno)
             if not done.cancelled():
                 done.set_exception(exception)
         else:
             sock.setblocking(False)
-            loop.remove_reader(fileno)
             create_client_task(sock)
             if not done.cancelled():
                 done.set_result(None)
 
-    accept_without_reader()
+    accept()
+    on_listening(True)
+    loop.add_reader(fileno, accept)
 
     try:
         return await done
     except asyncio.CancelledError:
-        loop.remove_reader(fileno)
         raise
+    finally:
+        loop.remove_reader(fileno)
 
 
 class TestBasic(unittest.TestCase):
