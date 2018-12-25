@@ -22,9 +22,8 @@ async def connection_pool(loop):
         sock = socket(family=AF_INET, type=SOCK_STREAM, proto=IPPROTO_TCP)
         sock.setblocking(False)
 
-        await loop.sock_connect(sock, (ip_address, port))
-
         try:
+            await loop.sock_connect(sock, (ip_address, port))
             yield Connection(sock)
         finally:
             try:
