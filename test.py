@@ -120,11 +120,6 @@ async def sock_accept(loop, server_sock, on_listening, create_client_task):
         raise
 
 
-async def cancel(task):
-    task.cancel()
-    await asyncio.sleep(0)
-
-
 class TestBasic(unittest.TestCase):
 
     @async_test
