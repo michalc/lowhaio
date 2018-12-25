@@ -4,11 +4,13 @@ from socket import (
     AF_INET,
     IPPROTO_TCP,
     SHUT_RDWR,
+    SO_LINGER,
     SO_REUSEADDR,
     SOCK_STREAM,
     SOL_SOCKET,
     socket,
 )
+import struct
 
 from lowhaio import (
     connection_pool,
@@ -48,7 +50,7 @@ async def server(loop, client_handler):
         # Client task is created immediately after socket is connected, in a
         # sync function and without a yield, so cleanup always happens, even
         # if the server task is immediately cancelled
-        task = loop.create_task(client_handler())
+        task = loop.create_task(client_handler(sock))
         client_tasks.add(task)
 
         def done(_):
@@ -131,8 +133,27 @@ class TestBasic(unittest.TestCase):
     async def test_connection(self):
         loop = asyncio.get_running_loop()
 
-        async def server_client():
+        async def server_client(_):
             pass
+
+        server_task = await server(loop, server_client)
+
+        async with \
+                connection_pool(loop) as pool, \
+                pool.connection('127.0.0.1', 8080):
+            pass
+
+        server_task.cancel()
+        await asyncio.sleep(0)
+
+    @async_test
+    async def test_server_send_rst(self):
+        loop = asyncio.get_running_loop()
+
+        async def server_client(sock):
+            l_onoff = 1
+            l_linger = 0
+            sock.setsockopt(SOL_SOCKET, SO_LINGER, struct.pack('ii', l_onoff, l_linger))
 
         server_task = await server(loop, server_client)
 
