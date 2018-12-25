@@ -105,7 +105,7 @@ async def sock_accept(loop, server_sock, on_listening, create_client_task):
         loop.remove_reader(fileno)
 
 
-class TestBasic(unittest.TestCase):
+class TestConnections(unittest.TestCase):
 
     @async_test
     async def test_server_close_after_client_not_raises(self):
