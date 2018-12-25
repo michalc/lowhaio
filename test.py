@@ -101,8 +101,6 @@ async def sock_accept(loop, server_sock, on_listening, create_client_task):
 
     try:
         return await done
-    except asyncio.CancelledError:
-        raise
     finally:
         loop.remove_reader(fileno)
 
