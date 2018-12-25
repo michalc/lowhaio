@@ -67,7 +67,7 @@ async def server(loop, client_handler):
 
     task = loop.create_task(server_task())
     await listening.wait()
-    return task, server_sock
+    return task
 
 
 async def sock_accept(loop, server_sock, on_listening, create_client_task):
@@ -106,7 +106,7 @@ class TestServer(unittest.TestCase):
         async def server_client(_):
             await server_wait_forever
 
-        server_task, _ = await server(loop, server_client)
+        server_task = await server(loop, server_client)
 
         async with \
                 connection_pool(loop) as pool, \
@@ -125,7 +125,7 @@ class TestServer(unittest.TestCase):
         async def server_client(_):
             await server_wait_forever
 
-        server_task, _ = await server(loop, server_client)
+        server_task = await server(loop, server_client)
 
         with self.assertRaises(OSError):
             async with \
@@ -143,7 +143,7 @@ class TestServer(unittest.TestCase):
         async def server_client(sock):
             sock.close()
 
-        server_task, _ = await server(loop, server_client)
+        server_task = await server(loop, server_client)
 
         with self.assertRaises(OSError):
             async with \
@@ -155,21 +155,19 @@ class TestServer(unittest.TestCase):
                     await asyncio.sleep(0)
 
     @async_test
-    async def test_close_by_server_sock_close_before_client_raises(self):
+    async def test_close_by_server_sock_close_then_connection_raises(self):
         loop = asyncio.get_running_loop()
 
         async def server_client(_):
             pass
 
-        server_task, server_sock = await server(loop, server_client)
+        server_task = await server(loop, server_client)
 
         with self.assertRaises(OSError):
             async with connection_pool(loop) as pool:
                 async with pool.connection('127.0.0.1', 8080):
                     pass
 
-                server_sock.close()
+                server_task.cancel()
+                await asyncio.sleep(0)
                 await pool.connection('127.0.0.1', 8080).__aenter__()
-
-        server_task.cancel()
-        await asyncio.sleep(0)
