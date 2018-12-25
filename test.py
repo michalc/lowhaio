@@ -128,11 +128,13 @@ async def cancel(task):
 class TestBasic(unittest.TestCase):
 
     @async_test
-    async def test_connection(self):
+    async def test_server_close_after_client_not_raises(self):
         loop = asyncio.get_running_loop()
 
+        server_wait_forever = asyncio.Future()
+
         async def server_client():
-            pass
+            await server_wait_forever
 
         server_task = await server(loop, server_client)
 
@@ -143,3 +145,23 @@ class TestBasic(unittest.TestCase):
 
         server_task.cancel()
         await asyncio.sleep(0)
+
+    @async_test
+    async def test_server_close_before_client_raises(self):
+        loop = asyncio.get_running_loop()
+
+        server_wait_forever = asyncio.Future()
+
+        async def server_client():
+            await server_wait_forever
+
+        server_task = await server(loop, server_client)
+
+        with self.assertRaises(OSError):
+            async with \
+                    connection_pool(loop) as pool, \
+                    pool.connection('127.0.0.1', 8080) as connection:
+                server_task.cancel()
+                while True:
+                    connection.sock.send(b'-')
+                    await asyncio.sleep(0)
