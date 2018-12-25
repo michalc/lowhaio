@@ -98,8 +98,6 @@ async def sock_accept(loop, server_sock, on_listening, create_client_task):
     def accept_with_reader():
         try:
             sock, _ = server_sock.accept()
-        except BlockingIOError:
-            pass
         except BaseException as exception:
             loop.remove_reader(fileno)
             if not done.cancelled():
