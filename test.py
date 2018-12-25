@@ -105,10 +105,10 @@ async def sock_accept(loop, server_sock, on_listening, create_client_task):
         loop.remove_reader(fileno)
 
 
-class TestConnections(unittest.TestCase):
+class TestServer(unittest.TestCase):
 
     @async_test
-    async def test_server_close_after_client_not_raises(self):
+    async def test_close_after_client_not_raises(self):
         loop = asyncio.get_running_loop()
 
         server_wait_forever = asyncio.Future()
@@ -127,7 +127,7 @@ class TestConnections(unittest.TestCase):
         await asyncio.sleep(0)
 
     @async_test
-    async def test_server_close_by_cancel_before_client_raises(self):
+    async def test_close_by_cancel_before_client_raises(self):
         loop = asyncio.get_running_loop()
 
         server_wait_forever = asyncio.Future()
@@ -147,7 +147,7 @@ class TestConnections(unittest.TestCase):
                     await asyncio.sleep(0)
 
     @async_test
-    async def test_server_close_by_client_sock_close_before_client_raises(self):
+    async def test_close_by_client_sock_close_before_client_raises(self):
         loop = asyncio.get_running_loop()
 
         async def server_client(sock):
@@ -165,7 +165,7 @@ class TestConnections(unittest.TestCase):
                     await asyncio.sleep(0)
 
     @async_test
-    async def test_server_close_by_server_sock_close_before_client_raises(self):
+    async def test_close_by_server_sock_close_before_client_raises(self):
         loop = asyncio.get_running_loop()
 
         async def server_client(_):
