@@ -95,29 +95,28 @@ async def sock_accept(loop, server_sock, on_listening, create_client_task):
         loop.remove_reader(fileno)
 
 
-class TestServer(unittest.TestCase):
+class Test(unittest.TestCase):
 
     @async_test
-    async def test_close_after_client_not_raises(self):
+    async def test_server_close_after_client_not_raises(self):
         loop = asyncio.get_running_loop()
 
-        server_wait_forever = asyncio.Future()
-
         async def server_client(_):
-            await server_wait_forever
+            pass
 
         server_task = await server(loop, server_client)
 
         async with \
                 connection_pool(loop) as pool, \
-                pool.connection('127.0.0.1', 8080):
-            pass
+                pool.connection('127.0.0.1', 8080) as connection:
+            connection.sock.send(b'-' * 128)
+            await asyncio.sleep(0)
 
         server_task.cancel()
         await asyncio.sleep(0)
 
     @async_test
-    async def test_close_by_cancel_before_client_raises(self):
+    async def test_server_cancel_then_client_send_raises(self):
         loop = asyncio.get_running_loop()
 
         server_wait_forever = asyncio.Future()
@@ -137,25 +136,7 @@ class TestServer(unittest.TestCase):
                     await asyncio.sleep(0)
 
     @async_test
-    async def test_close_by_client_sock_close_before_client_raises(self):
-        loop = asyncio.get_running_loop()
-
-        async def server_client(sock):
-            sock.close()
-
-        server_task = await server(loop, server_client)
-
-        with self.assertRaises(OSError):
-            async with \
-                    connection_pool(loop) as pool, \
-                    pool.connection('127.0.0.1', 8080) as connection:
-                server_task.cancel()
-                while True:
-                    connection.sock.send(b'-')
-                    await asyncio.sleep(0)
-
-    @async_test
-    async def test_close_by_server_sock_close_then_connection_raises(self):
+    async def test_server_cancel_then_connection_raises(self):
         loop = asyncio.get_running_loop()
 
         async def server_client(_):
