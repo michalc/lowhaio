@@ -187,7 +187,7 @@ class Test(unittest.TestCase):
                                       SSLContext(PROTOCOL_TLSv1_2)).__aenter__()
 
     @async_test
-    async def test_server_bad_context(self):
+    async def test_bad_context_raises(self):
         loop = asyncio.get_running_loop()
 
         async def server_client(_):
