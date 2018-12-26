@@ -156,7 +156,7 @@ class Test(unittest.TestCase):
 
         server_task = await server(loop, server_client)
 
-        with self.assertRaises(OSError):
+        with self.assertRaises(ConnectionError):
             async with \
                     connection_pool(loop) as pool, \
                     pool.connection('localhost', '127.0.0.1', 8080,
@@ -175,7 +175,7 @@ class Test(unittest.TestCase):
 
         server_task = await server(loop, server_client)
 
-        with self.assertRaises(OSError):
+        with self.assertRaises(ConnectionRefusedError):
             async with connection_pool(loop) as pool:
                 async with pool.connection('localhost', '127.0.0.1', 8080,
                                            SSLContext(PROTOCOL_TLSv1_2)):
