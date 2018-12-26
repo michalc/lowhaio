@@ -124,16 +124,17 @@ async def sock_accept(loop, server_sock, on_listening, create_client_task):
         loop.remove_reader(fileno)
 
 
+async def null_handler(_):
+    pass
+
+
 class Test(unittest.TestCase):
 
     @async_test
     async def test_server_close_after_client_not_raises(self):
         loop = asyncio.get_running_loop()
 
-        async def server_client(_):
-            pass
-
-        server_task = await server(loop, server_client)
+        server_task = await server(loop, null_handler)
 
         async with \
                 connection_pool(loop) as pool, \
@@ -170,10 +171,7 @@ class Test(unittest.TestCase):
     async def test_server_cancel_then_connection_raises(self):
         loop = asyncio.get_running_loop()
 
-        async def server_client(_):
-            pass
-
-        server_task = await server(loop, server_client)
+        server_task = await server(loop, null_handler)
 
         with self.assertRaises(ConnectionRefusedError):
             async with connection_pool(loop) as pool:
@@ -190,10 +188,7 @@ class Test(unittest.TestCase):
     async def test_bad_context_raises(self):
         loop = asyncio.get_running_loop()
 
-        async def server_client(_):
-            pass
-
-        server_task = await server(loop, server_client)
+        server_task = await server(loop, null_handler)
 
         with self.assertRaises(SSLCertVerificationError):
             async with connection_pool(loop) as pool:
