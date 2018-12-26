@@ -13,6 +13,7 @@ from ssl import (
     PROTOCOL_TLSv1_2,
     SSLCertVerificationError,
     SSLContext,
+    SSLError,
     create_default_context,
 )
 
@@ -31,7 +32,7 @@ def async_test(func):
     return wrapper
 
 
-async def server(loop, client_handler):
+async def server(loop, pre_ssl_client_handler, client_handler):
 
     ssl_context = SSLContext(PROTOCOL_TLSv1_2)
     ssl_context.load_cert_chain('public.crt', keyfile='private.key')
@@ -49,6 +50,8 @@ async def server(loop, client_handler):
     client_tasks = set()
 
     async def client_task(sock):
+        await pre_ssl_client_handler(sock)
+
         ssl_sock = None
         try:
             try:
@@ -134,7 +137,7 @@ class Test(unittest.TestCase):
     async def test_server_close_after_client_not_raises(self):
         loop = asyncio.get_running_loop()
 
-        server_task = await server(loop, null_handler)
+        server_task = await server(loop, null_handler, null_handler)
 
         async with \
                 connection_pool(loop) as pool, \
@@ -155,7 +158,7 @@ class Test(unittest.TestCase):
         async def server_client(_):
             await server_wait_forever
 
-        server_task = await server(loop, server_client)
+        server_task = await server(loop, null_handler, server_client)
 
         with self.assertRaises(ConnectionError):
             async with \
@@ -171,7 +174,7 @@ class Test(unittest.TestCase):
     async def test_server_cancel_then_connection_raises(self):
         loop = asyncio.get_running_loop()
 
-        server_task = await server(loop, null_handler)
+        server_task = await server(loop, null_handler, null_handler)
 
         with self.assertRaises(ConnectionRefusedError):
             async with connection_pool(loop) as pool:
@@ -188,7 +191,7 @@ class Test(unittest.TestCase):
     async def test_bad_context_raises(self):
         loop = asyncio.get_running_loop()
 
-        server_task = await server(loop, null_handler)
+        server_task = await server(loop, null_handler, null_handler)
 
         with self.assertRaises(SSLCertVerificationError):
             async with connection_pool(loop) as pool:
@@ -198,6 +201,23 @@ class Test(unittest.TestCase):
 
                 context = create_default_context()
                 await pool.connection('localhost', '127.0.0.1', 8080, context).__aenter__()
+
+        server_task.cancel()
+        await asyncio.sleep(0)
+
+    @async_test
+    async def test_bad_ssl_handshake_raises(self):
+        loop = asyncio.get_running_loop()
+
+        async def broken_pre_ssl_handler(sock):
+            sock.send(b'-')
+
+        server_task = await server(loop, broken_pre_ssl_handler, null_handler)
+
+        with self.assertRaises(SSLError):
+            async with connection_pool(loop) as pool:
+                await pool.connection('localhost', '127.0.0.1', 8080,
+                                      SSLContext(PROTOCOL_TLSv1_2)).__aenter__()
 
         server_task.cancel()
         await asyncio.sleep(0)
