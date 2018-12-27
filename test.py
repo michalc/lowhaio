@@ -19,6 +19,8 @@ from ssl import (
 
 from lowhaio import (
     connection_pool,
+    recv_until_close,
+    send_all,
     ssl_handshake,
     ssl_unwrap_socket,
 )
@@ -246,3 +248,242 @@ class Test(unittest.TestCase):
                                     SSLContext(PROTOCOL_TLSv1_2)) as connection:
                 await closed.wait()
                 connection.sock.send(b'-' * 128)
+
+    @async_test
+    async def test_send_small(self):
+        loop = asyncio.get_running_loop()
+
+        done = asyncio.Event()
+
+        data_to_send = b'abcd' * 100
+        chunks_received = []
+        bytes_received = 0
+
+        async def recv_handler(sock):
+            nonlocal bytes_received
+            async for chunk in recv_until_close(loop, sock, memoryview(bytearray(1024))):
+                chunks_received.append(bytes(chunk))
+                bytes_received += len(chunk)
+                if bytes_received >= len(data_to_send):
+                    break
+            done.set()
+
+        server_task = await server(loop, null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        context = SSLContext(PROTOCOL_TLSv1_2)
+        async with \
+                connection_pool(loop) as pool, \
+                pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
+            await pool.send(connection, memoryview(data_to_send), 1)
+            await done.wait()
+
+        self.assertEqual(b''.join(chunks_received), data_to_send)
+
+    @async_test
+    async def test_send_large(self):
+        loop = asyncio.get_running_loop()
+
+        done = asyncio.Event()
+        # Large amount of data is required to cause SSLWantWriteError
+        data_to_send = b'abcd' * 2097152
+        chunks_received = []
+        bytes_received = 0
+
+        async def recv_handler(sock):
+            nonlocal bytes_received
+            async for chunk in recv_until_close(loop, sock, memoryview(bytearray(1024))):
+                chunks_received.append(bytes(chunk))
+                bytes_received += len(chunk)
+                if bytes_received >= len(data_to_send):
+                    break
+            done.set()
+
+        server_task = await server(loop, null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        context = SSLContext(PROTOCOL_TLSv1_2)
+        async with \
+                connection_pool(loop) as pool, \
+                pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
+            await pool.send(connection, memoryview(data_to_send), 2097152)
+            await done.wait()
+
+        self.assertEqual(b''.join(chunks_received), data_to_send)
+        await cancel(server_task)
+
+    @async_test
+    async def test_send_after_close_raises(self):
+        loop = asyncio.get_running_loop()
+
+        done = asyncio.Event()
+
+        async def recv_handler(sock):
+            sock.close()
+            done.set()
+
+        server_task = await server(loop, null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+        context = SSLContext(PROTOCOL_TLSv1_2)
+
+        with self.assertRaises(BrokenPipeError):
+            async with \
+                    connection_pool(loop) as pool, \
+                    pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
+                await done.wait()
+                await pool.send(connection, memoryview(bytearray(b'-')), 1)
+
+    @async_test
+    async def test_close_after_blocked_send_raises(self):
+        loop = asyncio.get_running_loop()
+
+        # Large amount of data is required to cause SSLWantWriteError
+        data_to_send = b'abcd' * 2097152
+
+        async def recv_handler(sock):
+            async for _ in recv_until_close(loop, sock, memoryview(bytearray(1024))):
+                break
+
+        server_task = await server(loop, null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        context = SSLContext(PROTOCOL_TLSv1_2)
+        with self.assertRaises(OSError):
+            async with \
+                    connection_pool(loop) as pool, \
+                    pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
+                await pool.send(connection, memoryview(data_to_send), 2097152)
+
+    @async_test
+    async def test_send_cancel_propagates(self):
+        loop = asyncio.get_running_loop()
+
+        data_to_send = b'abcd' * 2097152
+        sending = asyncio.Event()
+        server_forever = asyncio.Event()
+
+        async def recv_handler(_):
+            await server_forever.wait()
+
+        server_task = await server(loop, null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        context = SSLContext(PROTOCOL_TLSv1_2)
+
+        async def client_recv():
+            async with \
+                    connection_pool(loop) as pool, \
+                    pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
+                sending.set()
+                await pool.send(connection, memoryview(data_to_send), 2097152)
+
+        client_done = asyncio.Event()
+
+        def set_client_done(_):
+            client_done.set()
+        client_task = loop.create_task(client_recv())
+        client_task.add_done_callback(set_client_done)
+
+        await sending.wait()
+        client_task.cancel()
+        server_task.cancel()
+        await client_done.wait()
+
+        self.assertEqual(client_task.cancelled(), True)
+
+    @async_test
+    async def test_recv_small(self):
+        loop = asyncio.get_running_loop()
+
+        data_to_recv = b'abcd' * 100
+
+        async def recv_handler(sock):
+            await send_all(loop, sock, data_to_recv, 1024)
+
+        server_task = await server(loop, null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        context = SSLContext(PROTOCOL_TLSv1_2)
+
+        chunks = []
+        async with \
+                connection_pool(loop) as pool, \
+                pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
+            async for chunk in pool.recv(connection, bytearray(1)):
+                chunks.append(bytes(chunk))
+
+        self.assertEqual(b''.join(chunks), data_to_recv)
+
+    @async_test
+    async def test_recv_large(self):
+        loop = asyncio.get_running_loop()
+
+        data_to_recv = b'abcd' * 65536
+
+        async def recv_handler(sock):
+            await send_all(loop, sock, data_to_recv, 1024)
+
+        server_task = await server(loop, null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        context = SSLContext(PROTOCOL_TLSv1_2)
+
+        chunks = []
+        async with \
+                connection_pool(loop) as pool, \
+                pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
+            async for chunk in pool.recv(connection, bytearray(131072)):
+                chunks.append(bytes(chunk))
+
+        self.assertEqual(b''.join(chunks), data_to_recv)
+
+    @async_test
+    async def test_recv_into_bad_array_raises(self):
+        loop = asyncio.get_running_loop()
+
+        server_task = await server(loop, null_handler, null_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        context = SSLContext(PROTOCOL_TLSv1_2)
+
+        with self.assertRaises(TypeError):
+            async with \
+                    connection_pool(loop) as pool, \
+                    pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
+                await pool.recv(connection, list()).__anext__()
+
+    @async_test
+    async def test_recv_cancel_propagates(self):
+        loop = asyncio.get_running_loop()
+
+        server_forever = asyncio.Event()
+        received_byte = asyncio.Event()
+
+        async def server_recv_handler(sock):
+            await send_all(loop, sock, b'-', 1024)
+            await server_forever.wait()
+
+        server_task = await server(loop, null_handler, server_recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        async def client_recv():
+            context = SSLContext(PROTOCOL_TLSv1_2)
+            async with \
+                    connection_pool(loop) as pool, \
+                    pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
+                async for _ in pool.recv(connection, bytearray(1)):
+                    received_byte.set()
+
+        client_done = asyncio.Event()
+
+        def set_client_done(_):
+            client_done.set()
+        client_task = loop.create_task(client_recv())
+        client_task.add_done_callback(set_client_done)
+
+        await received_byte.wait()
+        client_task.cancel()
+        server_task.cancel()
+        await client_done.wait()
+
+        self.assertEqual(client_task.cancelled(), True)
