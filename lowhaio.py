@@ -1,4 +1,5 @@
 from asyncio import (
+    CancelledError,
     Future,
 )
 from collections import (
@@ -13,10 +14,11 @@ from socket import (
 )
 from ssl import (
     SSLWantReadError,
+    SSLWantWriteError,
 )
 
 
-ConnectionPool = namedtuple('ConnectionPool', ('connection'))
+ConnectionPool = namedtuple('ConnectionPool', ('connection', 'send', 'recv'))
 Connection = namedtuple('Connection', ('sock'))
 
 
@@ -65,7 +67,14 @@ async def connection_pool(loop):
         if exceptions:
             raise exceptions[0]
 
-    yield ConnectionPool(connection=connection)
+    async def send(connection, buf, chunk_bytes):
+        await send_all(loop, connection.sock, buf, chunk_bytes)
+
+    async def recv(connection, buf_memoryview):
+        async for chunk in recv_until_close(loop, connection.sock, buf_memoryview):
+            yield chunk
+
+    yield ConnectionPool(connection=connection, send=send, recv=recv)
 
 
 async def sock_connect(loop, sock, address):
@@ -140,4 +149,85 @@ async def ssl_unwrap_socket(loop, ssl_sock):
     loop.add_reader(fileno, unwrap)
     unwrap()
 
-    return await done
+    try:
+        return await done
+    except CancelledError:
+        loop.remove_reader(fileno)
+        raise
+
+
+async def send_all(loop, sock, buf, chunk_bytes):
+    cursor = 0
+    while cursor != len(buf):
+        num_bytes = await send_at_least_one_byte(loop, sock, buf[cursor:], chunk_bytes)
+        cursor += num_bytes
+
+
+async def recv_until_close(loop, sock, buf_memoryview):
+    try:
+        while True:
+            num_bytes = await recv_at_least_one_byte(loop, sock, buf_memoryview,
+                                                     len(buf_memoryview))
+            yield bytearray(buf_memoryview[:num_bytes])
+    except BrokenPipeError:
+        pass
+
+
+async def send_at_least_one_byte(loop, sock, buf, chunk_bytes):
+    fileno = sock.fileno()
+    max_bytes = min(chunk_bytes, len(buf))
+    done = Future()
+
+    def write():
+        try:
+            num_bytes = sock.send(buf[:max_bytes])
+        except (SSLWantWriteError, BlockingIOError):
+            pass
+        except BaseException as exception:
+            loop.remove_writer(fileno)
+            if not done.done():
+                done.set_exception(exception)
+        else:
+            loop.remove_writer(fileno)
+            if not done.done():
+                done.set_result(num_bytes)
+
+    loop.add_writer(fileno, write)
+    write()
+
+    try:
+        return await done
+    except CancelledError:
+        loop.remove_writer(fileno)
+        raise
+
+
+async def recv_at_least_one_byte(loop, sock, buf_memoryview, chunk_bytes):
+    fileno = sock.fileno()
+    max_bytes = min(chunk_bytes, len(buf_memoryview))
+    done = Future()
+
+    def read():
+        try:
+            num_bytes = sock.recv_into(buf_memoryview, max_bytes)
+        except (SSLWantReadError, BlockingIOError):
+            pass
+        except BaseException as exception:
+            loop.remove_reader(fileno)
+            if not done.done():
+                done.set_exception(exception)
+        else:
+            loop.remove_reader(fileno)
+            if not done.done() and num_bytes == 0:
+                done.set_exception(BrokenPipeError())
+            elif not done.done():
+                done.set_result(num_bytes)
+
+    loop.add_reader(fileno, read)
+    read()
+
+    try:
+        return await done
+    except CancelledError:
+        loop.remove_reader(fileno)
+        raise
