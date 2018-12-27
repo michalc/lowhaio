@@ -102,6 +102,11 @@ async def server(loop, pre_ssl_client_handler, client_handler):
     return task
 
 
+async def cancel(task):
+    task.cancel()
+    await asyncio.sleep(0)
+
+
 async def sock_accept(loop, server_sock, on_listening, create_client_task):
     fileno = server_sock.fileno()
     done = asyncio.Future()
@@ -133,11 +138,15 @@ async def null_handler(_):
 
 class Test(unittest.TestCase):
 
+    def add_async_cleanup(self, loop, coroutine, *args):
+        self.addCleanup(loop.run_until_complete, coroutine(*args))
+
     @async_test
     async def test_server_close_after_client_not_raises(self):
         loop = asyncio.get_running_loop()
 
         server_task = await server(loop, null_handler, null_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
 
         async with \
                 connection_pool(loop) as pool, \
@@ -145,9 +154,6 @@ class Test(unittest.TestCase):
                                 SSLContext(PROTOCOL_TLSv1_2)) as connection:
             connection.sock.send(b'-' * 128)
             await asyncio.sleep(0)
-
-        server_task.cancel()
-        await asyncio.sleep(0)
 
     @async_test
     async def test_server_cancel_then_client_send_raises(self):
@@ -159,6 +165,7 @@ class Test(unittest.TestCase):
             await server_wait_forever
 
         server_task = await server(loop, null_handler, server_client)
+        self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(ConnectionError):
             async with \
@@ -175,6 +182,7 @@ class Test(unittest.TestCase):
         loop = asyncio.get_running_loop()
 
         server_task = await server(loop, null_handler, null_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(ConnectionRefusedError):
             async with connection_pool(loop) as pool:
@@ -192,6 +200,7 @@ class Test(unittest.TestCase):
         loop = asyncio.get_running_loop()
 
         server_task = await server(loop, null_handler, null_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(SSLCertVerificationError):
             async with connection_pool(loop) as pool:
@@ -202,9 +211,6 @@ class Test(unittest.TestCase):
                 context = create_default_context()
                 await pool.connection('localhost', '127.0.0.1', 8080, context).__aenter__()
 
-        server_task.cancel()
-        await asyncio.sleep(0)
-
     @async_test
     async def test_bad_ssl_handshake_raises(self):
         loop = asyncio.get_running_loop()
@@ -213,11 +219,9 @@ class Test(unittest.TestCase):
             sock.send(b'-')
 
         server_task = await server(loop, broken_pre_ssl_handler, null_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(SSLError):
             async with connection_pool(loop) as pool:
                 await pool.connection('localhost', '127.0.0.1', 8080,
                                       SSLContext(PROTOCOL_TLSv1_2)).__aenter__()
-
-        server_task.cancel()
-        await asyncio.sleep(0)
