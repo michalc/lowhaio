@@ -34,24 +34,27 @@ async def connection_pool(loop):
 
         async def cleanup_ssl_unwrap():
             nonlocal sock
-            sock = await ssl_unwrap_socket(loop, ssl_sock) if ssl_sock else sock
+            sock = await ssl_unwrap_socket(loop, ssl_sock)
 
-        cleanups = [cleanup_ssl_unwrap, cleanup_sock_shutdown, cleanup_sock_close]
+        cleanups = []
 
         sock = socket(family=AF_INET, type=SOCK_STREAM, proto=IPPROTO_TCP)
         sock.setblocking(False)
-        ssl_sock = None
+        cleanups.append(cleanup_sock_close)
 
         try:
+            cleanups.append(cleanup_sock_shutdown)
             await sock_connect(loop, sock, (ip_address, port))
 
             ssl_sock = ssl_context.wrap_socket(
                 sock, server_hostname=hostname, do_handshake_on_connect=False)
+
+            cleanups.append(cleanup_ssl_unwrap)
             await ssl_handshake(loop, ssl_sock)
 
             yield Connection(ssl_sock)
         finally:
-            for cleanup in cleanups:
+            for cleanup in reversed(cleanups):
                 try:
                     await cleanup()
                 except BaseException:
