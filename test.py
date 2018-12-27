@@ -225,3 +225,22 @@ class Test(unittest.TestCase):
             async with connection_pool(loop) as pool:
                 await pool.connection('localhost', '127.0.0.1', 8080,
                                       SSLContext(PROTOCOL_TLSv1_2)).__aenter__()
+
+    @async_test
+    async def test_bad_close_raises(self):
+        loop = asyncio.get_running_loop()
+
+        closed = asyncio.Event()
+
+        async def early_close(ssl_sock):
+            ssl_sock.close()
+            closed.set()
+
+        server_task = await server(loop, null_handler, early_close)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        with self.assertRaises(OSError):
+            async with \
+                    connection_pool(loop) as pool, \
+                    pool.connection('localhost', '127.0.0.1', 8080, SSLContext(PROTOCOL_TLSv1_2)):
+                await closed.wait()
