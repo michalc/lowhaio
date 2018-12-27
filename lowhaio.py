@@ -70,19 +70,18 @@ async def ssl_handshake(loop, ssl_sock):
         except SSLWantReadError:
             pass
         except BaseException as exception:
+            loop.remove_reader(fileno)
             if not done.done():
                 done.set_exception(exception)
         else:
+            loop.remove_reader(fileno)
             if not done.done():
                 done.set_result(None)
 
-    handshake()
     loop.add_reader(fileno, handshake)
+    handshake()
 
-    try:
-        return await done
-    finally:
-        loop.remove_reader(fileno)
+    return await done
 
 
 async def ssl_unwrap_socket(loop, ssl_sock):
@@ -95,16 +94,15 @@ async def ssl_unwrap_socket(loop, ssl_sock):
         except SSLWantReadError:
             pass
         except BaseException as exception:
+            loop.remove_reader(fileno)
             if not done.done():
                 done.set_exception(exception)
         else:
+            loop.remove_reader(fileno)
             if not done.done():
                 done.set_result(sock)
 
-    unwrap()
     loop.add_reader(fileno, unwrap)
+    unwrap()
 
-    try:
-        return await done
-    finally:
-        loop.remove_reader(fileno)
+    return await done
