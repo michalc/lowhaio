@@ -34,10 +34,7 @@ async def connection_pool(loop):
 
         async def cleanup_ssl_unwrap():
             nonlocal sock
-            sock = await ssl_unwrap_socket(loop, ssl_sock)
-
-        async def cleanup_ssl_close():
-            ssl_sock.close()
+            sock = await ssl_unwrap_socket(loop, sock)
 
         cleanups = []
         exceptions = []
@@ -50,14 +47,12 @@ async def connection_pool(loop):
             cleanups.append(cleanup_sock_shutdown)
             await sock_connect(loop, sock, (ip_address, port))
 
-            ssl_sock = ssl_context.wrap_socket(sock, server_hostname=hostname,
-                                               do_handshake_on_connect=False)
+            sock = ssl_context.wrap_socket(sock, server_hostname=hostname,
+                                           do_handshake_on_connect=False)
             cleanups.append(cleanup_ssl_unwrap)
-            # Avoids resource warnings if server closes unexpectadly
-            cleanups.insert(0, cleanup_ssl_close)
-            await ssl_handshake(loop, ssl_sock)
+            await ssl_handshake(loop, sock)
 
-            yield Connection(ssl_sock)
+            yield Connection(sock)
         except BaseException as exception:
             exceptions.append(exception)
         finally:
