@@ -242,5 +242,7 @@ class Test(unittest.TestCase):
         with self.assertRaises(OSError):
             async with \
                     connection_pool(loop) as pool, \
-                    pool.connection('localhost', '127.0.0.1', 8080, SSLContext(PROTOCOL_TLSv1_2)):
+                    pool.connection('localhost', '127.0.0.1', 8080,
+                                    SSLContext(PROTOCOL_TLSv1_2)) as connection:
                 await closed.wait()
+                connection.sock.send(b'-' * 128)
