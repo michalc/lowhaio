@@ -8,7 +8,7 @@ from contextlib import (
     asynccontextmanager,
 )
 from socket import (
-    AF_INET, IPPROTO_TCP, SHUT_RDWR, SOCK_STREAM,
+    AF_INET, IPPROTO_TCP, SHUT_RDWR, SOCK_STREAM, SOL_SOCKET, SO_ERROR,
     socket,
 )
 from ssl import (
@@ -43,7 +43,7 @@ async def connection_pool(loop):
         ssl_sock = None
 
         try:
-            await loop.sock_connect(sock, (ip_address, port))
+            await sock_connect(loop, sock, (ip_address, port))
 
             ssl_sock = ssl_context.wrap_socket(
                 sock, server_hostname=hostname, do_handshake_on_connect=False)
@@ -58,6 +58,33 @@ async def connection_pool(loop):
                     pass
 
     yield ConnectionPool(connection=connection)
+
+
+async def sock_connect(loop, sock, address):
+    fileno = sock.fileno()
+    done = Future()
+
+    def connect():
+        try:
+            err = sock.getsockopt(SOL_SOCKET, SO_ERROR)
+            if err != 0:
+                raise OSError(err, f'Connect call failed {address}')
+        except BaseException as exception:
+            loop.remove_writer(fileno)
+            if not done.done():
+                done.set_exception(exception)
+        else:
+            loop.remove_writer(fileno)
+            if not done.done():
+                done.set_result(None)
+
+    loop.add_writer(fileno, connect)
+    try:
+        sock.connect(address)
+    except BlockingIOError:
+        pass
+
+    return await done
 
 
 async def ssl_handshake(loop, ssl_sock):
