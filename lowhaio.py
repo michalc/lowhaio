@@ -46,9 +46,8 @@ async def connection_pool(loop):
             cleanups.append(cleanup_sock_shutdown)
             await sock_connect(loop, sock, (ip_address, port))
 
-            ssl_sock = ssl_context.wrap_socket(
-                sock, server_hostname=hostname, do_handshake_on_connect=False)
-
+            ssl_sock = ssl_context.wrap_socket(sock, server_hostname=hostname,
+                                               do_handshake_on_connect=False)
             cleanups.append(cleanup_ssl_unwrap)
             await ssl_handshake(loop, ssl_sock)
 
