@@ -18,63 +18,65 @@ from ssl import (
 )
 
 
-ConnectionPool = namedtuple('ConnectionPool', ('connection', 'send', 'recv'))
+ConnectionPool = namedtuple('ConnectionPool', ())
 Connection = namedtuple('Connection', ('sock'))
 
 
 @asynccontextmanager
-async def connection_pool(loop):
+async def connection_pool(_):
+    yield ConnectionPool()
 
-    @asynccontextmanager
-    async def connection(hostname, ip_address, port, ssl_context):
 
-        async def cleanup_sock_close():
-            sock.close()
+@asynccontextmanager
+async def get_connection(loop, hostname, ip_address, port, ssl_context):
 
-        async def cleanup_sock_shutdown():
-            sock.shutdown(SHUT_RDWR)
+    async def cleanup_sock_close():
+        sock.close()
 
-        async def cleanup_ssl_unwrap():
-            nonlocal sock
-            sock = await ssl_unwrap_socket(loop, sock)
+    async def cleanup_sock_shutdown():
+        sock.shutdown(SHUT_RDWR)
 
-        cleanups = []
-        exceptions = []
+    async def cleanup_ssl_unwrap():
+        nonlocal sock
+        sock = await ssl_unwrap_socket(loop, sock)
 
-        sock = socket(family=AF_INET, type=SOCK_STREAM, proto=IPPROTO_TCP)
-        sock.setblocking(False)
-        cleanups.append(cleanup_sock_close)
+    cleanups = []
+    exceptions = []
 
-        try:
-            cleanups.append(cleanup_sock_shutdown)
-            await sock_connect(loop, sock, (ip_address, port))
+    sock = socket(family=AF_INET, type=SOCK_STREAM, proto=IPPROTO_TCP)
+    sock.setblocking(False)
+    cleanups.append(cleanup_sock_close)
 
-            sock = ssl_context.wrap_socket(sock, server_hostname=hostname,
-                                           do_handshake_on_connect=False)
-            cleanups.append(cleanup_ssl_unwrap)
-            await ssl_handshake(loop, sock)
+    try:
+        cleanups.append(cleanup_sock_shutdown)
+        await sock_connect(loop, sock, (ip_address, port))
 
-            yield Connection(sock)
-        except BaseException as exception:
-            exceptions.append(exception)
-        finally:
-            for cleanup in reversed(cleanups):
-                try:
-                    await cleanup()
-                except BaseException as exception:
-                    exceptions.append(exception)
+        sock = ssl_context.wrap_socket(sock, server_hostname=hostname,
+                                       do_handshake_on_connect=False)
+        cleanups.append(cleanup_ssl_unwrap)
+        await ssl_handshake(loop, sock)
 
-        if exceptions:
-            raise exceptions[0]
+        yield Connection(sock)
+    except BaseException as exception:
+        exceptions.append(exception)
+    finally:
+        for cleanup in reversed(cleanups):
+            try:
+                await cleanup()
+            except BaseException as exception:
+                exceptions.append(exception)
 
-    async def send(connection, buf, chunk_bytes):
-        await send_all(loop, connection.sock, buf, chunk_bytes)
+    if exceptions:
+        raise exceptions[0]
 
-    async def recv(connection, buf_memoryview):
-        async for chunk in recv_until_close(loop, connection.sock, buf_memoryview):
-            yield chunk
 
-    yield ConnectionPool(connection=connection, send=send, recv=recv)
+async def send(loop, connection, buf, chunk_bytes):
+    await send_all(loop, connection.sock, buf, chunk_bytes)
+
+
+async def recv(loop, connection, buf_memoryview):
+    async for chunk in recv_until_close(loop, connection.sock, buf_memoryview):
+        yield chunk
 
 
 async def sock_connect(loop, sock, address):

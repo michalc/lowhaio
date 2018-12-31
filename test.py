@@ -19,6 +19,9 @@ from ssl import (
 
 from lowhaio import (
     connection_pool,
+    get_connection,
+    send,
+    recv,
     recv_until_close,
     send_all,
     ssl_handshake,
@@ -151,9 +154,9 @@ class Test(unittest.TestCase):
         self.add_async_cleanup(loop, cancel, server_task)
 
         async with \
-                connection_pool(loop) as pool, \
-                pool.connection('localhost', '127.0.0.1', 8080,
-                                SSLContext(PROTOCOL_TLSv1_2)) as connection:
+                connection_pool(loop), \
+                get_connection(loop, 'localhost', '127.0.0.1', 8080,
+                               SSLContext(PROTOCOL_TLSv1_2)) as connection:
             connection.sock.send(b'-' * 128)
             await asyncio.sleep(0)
 
@@ -171,9 +174,9 @@ class Test(unittest.TestCase):
 
         with self.assertRaises(ConnectionError):
             async with \
-                    connection_pool(loop) as pool, \
-                    pool.connection('localhost', '127.0.0.1', 8080,
-                                    SSLContext(PROTOCOL_TLSv1_2)) as connection:
+                    connection_pool(loop), \
+                    get_connection(loop, 'localhost', '127.0.0.1', 8080,
+                                   SSLContext(PROTOCOL_TLSv1_2)) as connection:
                 server_task.cancel()
                 while True:
                     connection.sock.send(b'-')
@@ -187,15 +190,16 @@ class Test(unittest.TestCase):
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(ConnectionRefusedError):
-            async with connection_pool(loop) as pool:
-                async with pool.connection('localhost', '127.0.0.1', 8080,
-                                           SSLContext(PROTOCOL_TLSv1_2)):
+            async with connection_pool(loop):
+                async with get_connection(loop, 'localhost', '127.0.0.1', 8080,
+                                          SSLContext(PROTOCOL_TLSv1_2)):
                     pass
 
                 server_task.cancel()
                 await asyncio.sleep(0)
-                await pool.connection('localhost', '127.0.0.1', 8080,
-                                      SSLContext(PROTOCOL_TLSv1_2)).__aenter__()
+                # pylint: disable=no-member
+                await get_connection(loop, 'localhost', '127.0.0.1', 8080,
+                                     SSLContext(PROTOCOL_TLSv1_2)).__aenter__()
 
     @async_test
     async def test_bad_context_raises(self):
@@ -205,13 +209,14 @@ class Test(unittest.TestCase):
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(SSLCertVerificationError):
-            async with connection_pool(loop) as pool:
-                async with pool.connection(
-                        'localhost', '127.0.0.1', 8080, SSLContext(PROTOCOL_TLSv1_2)):
+            async with connection_pool(loop):
+                async with get_connection(loop, 'localhost', '127.0.0.1', 8080,
+                                          SSLContext(PROTOCOL_TLSv1_2)):
                     pass
 
                 context = create_default_context()
-                await pool.connection('localhost', '127.0.0.1', 8080, context).__aenter__()
+                # pylint: disable=no-member
+                await get_connection(loop, 'localhost', '127.0.0.1', 8080, context).__aenter__()
 
     @async_test
     async def test_bad_ssl_handshake_raises(self):
@@ -224,9 +229,10 @@ class Test(unittest.TestCase):
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(SSLError):
-            async with connection_pool(loop) as pool:
-                await pool.connection('localhost', '127.0.0.1', 8080,
-                                      SSLContext(PROTOCOL_TLSv1_2)).__aenter__()
+            async with connection_pool(loop):
+                # pylint: disable=no-member
+                await get_connection(loop, 'localhost', '127.0.0.1', 8080,
+                                     SSLContext(PROTOCOL_TLSv1_2)).__aenter__()
 
     @async_test
     async def test_bad_close_raises(self):
@@ -243,9 +249,9 @@ class Test(unittest.TestCase):
 
         with self.assertRaises(OSError):
             async with \
-                    connection_pool(loop) as pool, \
-                    pool.connection('localhost', '127.0.0.1', 8080,
-                                    SSLContext(PROTOCOL_TLSv1_2)) as connection:
+                    connection_pool(loop), \
+                    get_connection(loop, 'localhost', '127.0.0.1', 8080,
+                                   SSLContext(PROTOCOL_TLSv1_2)) as connection:
                 await closed.wait()
                 connection.sock.send(b'-' * 128)
 
@@ -273,9 +279,9 @@ class Test(unittest.TestCase):
 
         context = SSLContext(PROTOCOL_TLSv1_2)
         async with \
-                connection_pool(loop) as pool, \
-                pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
-            await pool.send(connection, memoryview(data_to_send), 1)
+                connection_pool(loop), \
+                get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
+            await send(loop, connection, memoryview(data_to_send), 1)
             await done.wait()
 
         self.assertEqual(b''.join(chunks_received), data_to_send)
@@ -304,9 +310,9 @@ class Test(unittest.TestCase):
 
         context = SSLContext(PROTOCOL_TLSv1_2)
         async with \
-                connection_pool(loop) as pool, \
-                pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
-            await pool.send(connection, memoryview(data_to_send), 2097152)
+                connection_pool(loop), \
+                get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
+            await send(loop, connection, memoryview(data_to_send), 2097152)
             await done.wait()
 
         self.assertEqual(b''.join(chunks_received), data_to_send)
@@ -328,10 +334,10 @@ class Test(unittest.TestCase):
 
         with self.assertRaises(BrokenPipeError):
             async with \
-                    connection_pool(loop) as pool, \
-                    pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
+                    connection_pool(loop), \
+                    get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
                 await done.wait()
-                await pool.send(connection, memoryview(bytearray(b'-')), 1)
+                await send(loop, connection, memoryview(bytearray(b'-')), 1)
 
     @async_test
     async def test_close_after_blocked_send_raises(self):
@@ -350,9 +356,9 @@ class Test(unittest.TestCase):
         context = SSLContext(PROTOCOL_TLSv1_2)
         with self.assertRaises(OSError):
             async with \
-                    connection_pool(loop) as pool, \
-                    pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
-                await pool.send(connection, memoryview(data_to_send), 2097152)
+                    connection_pool(loop), \
+                    get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
+                await send(loop, connection, memoryview(data_to_send), 2097152)
 
     @async_test
     async def test_send_cancel_propagates(self):
@@ -372,10 +378,10 @@ class Test(unittest.TestCase):
 
         async def client_recv():
             async with \
-                    connection_pool(loop) as pool, \
-                    pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
+                    connection_pool(loop), \
+                    get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
                 sending.set()
-                await pool.send(connection, memoryview(data_to_send), 2097152)
+                await send(loop, connection, memoryview(data_to_send), 2097152)
 
         client_done = asyncio.Event()
 
@@ -407,9 +413,9 @@ class Test(unittest.TestCase):
 
         chunks = []
         async with \
-                connection_pool(loop) as pool, \
-                pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
-            async for chunk in pool.recv(connection, bytearray(1)):
+                connection_pool(loop), \
+                get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
+            async for chunk in recv(loop, connection, bytearray(1)):
                 chunks.append(bytes(chunk))
 
         self.assertEqual(b''.join(chunks), data_to_recv)
@@ -430,9 +436,9 @@ class Test(unittest.TestCase):
 
         chunks = []
         async with \
-                connection_pool(loop) as pool, \
-                pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
-            async for chunk in pool.recv(connection, bytearray(131072)):
+                connection_pool(loop), \
+                get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
+            async for chunk in recv(loop, connection, bytearray(131072)):
                 chunks.append(bytes(chunk))
 
         self.assertEqual(b''.join(chunks), data_to_recv)
@@ -448,9 +454,10 @@ class Test(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             async with \
-                    connection_pool(loop) as pool, \
-                    pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
-                await pool.recv(connection, list()).__anext__()
+                    connection_pool(loop), \
+                    get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
+                # pylint: disable=no-member
+                await recv(loop, connection, list()).__anext__()
 
     @async_test
     async def test_recv_cancel_propagates(self):
@@ -469,9 +476,9 @@ class Test(unittest.TestCase):
         async def client_recv():
             context = SSLContext(PROTOCOL_TLSv1_2)
             async with \
-                    connection_pool(loop) as pool, \
-                    pool.connection('localhost', '127.0.0.1', 8080, context) as connection:
-                async for _ in pool.recv(connection, bytearray(1)):
+                    connection_pool(loop), \
+                    get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
+                async for _ in recv(loop, connection, bytearray(1)):
                     received_byte.set()
 
         client_done = asyncio.Event()
