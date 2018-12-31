@@ -33,13 +33,13 @@ class AsyncContextManager:
         return await self.generator.__anext__()
 
     async def __aexit__(self, typ, value, traceback):
-        if typ is None:
-            try:
-                await self.generator.__anext__()
-            except StopAsyncIteration:
-                return
-        else:
-            await self.generator.athrow(typ, value, traceback)
+        try:
+            coro = \
+                self.generator.__anext__() if typ is None else \
+                self.generator.athrow(typ, value, traceback)
+            await coro
+        except StopAsyncIteration:
+            return
 
 
 def asynccontextmanager(generator_func):
