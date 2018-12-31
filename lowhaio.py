@@ -2,9 +2,6 @@ from asyncio import (
     CancelledError,
     Future,
 )
-from collections import (
-    namedtuple,
-)
 from contextlib import (
     asynccontextmanager,
 )
@@ -18,8 +15,15 @@ from ssl import (
 )
 
 
-ConnectionPool = namedtuple('ConnectionPool', ())
-Connection = namedtuple('Connection', ('sock'))
+class ConnectionPool:
+    pass
+
+
+class Connection:
+    __slots__ = ('sock', )
+
+    def __init__(self, sock):
+        self.sock = sock
 
 
 @asynccontextmanager
