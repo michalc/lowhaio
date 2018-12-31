@@ -2,9 +2,6 @@ from asyncio import (
     CancelledError,
     Future,
 )
-from contextlib import (
-    asynccontextmanager,
-)
 from socket import (
     AF_INET, IPPROTO_TCP, SHUT_RDWR, SOCK_STREAM, SOL_SOCKET, SO_ERROR,
     socket,
@@ -24,6 +21,33 @@ class Connection:
 
     def __init__(self, sock):
         self.sock = sock
+
+
+class AsyncContextManager:
+    __slots__ = ('generator', )
+
+    def __init__(self, generator):
+        self.generator = generator
+
+    async def __aenter__(self):
+        return await self.generator.__anext__()
+
+    async def __aexit__(self, typ, value, traceback):
+        if typ is None:
+            try:
+                await self.generator.__anext__()
+            except StopAsyncIteration:
+                return
+        else:
+            await self.generator.athrow(typ, value, traceback)
+
+
+def asynccontextmanager(generator_func):
+
+    def wrapped(*args, **kwargs):
+        return AsyncContextManager(generator_func(*args, **kwargs))
+
+    return wrapped
 
 
 @asynccontextmanager
