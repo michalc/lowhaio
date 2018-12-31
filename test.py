@@ -22,8 +22,6 @@ from lowhaio import (
     get_connection,
     send,
     recv,
-    recv_until_close,
-    send_all,
     ssl_handshake,
     ssl_unwrap_socket,
 )
@@ -267,7 +265,7 @@ class Test(unittest.TestCase):
 
         async def recv_handler(sock):
             nonlocal bytes_received
-            async for chunk in recv_until_close(loop, sock, memoryview(bytearray(1024))):
+            async for chunk in recv(loop, sock, memoryview(bytearray(1024))):
                 chunks_received.append(bytes(chunk))
                 bytes_received += len(chunk)
                 if bytes_received >= len(data_to_send):
@@ -281,7 +279,7 @@ class Test(unittest.TestCase):
         async with \
                 connection_pool(loop), \
                 get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-            await send(loop, connection, memoryview(data_to_send), 1)
+            await send(loop, connection.sock, memoryview(data_to_send), 1)
             await done.wait()
 
         self.assertEqual(b''.join(chunks_received), data_to_send)
@@ -298,7 +296,7 @@ class Test(unittest.TestCase):
 
         async def recv_handler(sock):
             nonlocal bytes_received
-            async for chunk in recv_until_close(loop, sock, memoryview(bytearray(1024))):
+            async for chunk in recv(loop, sock, memoryview(bytearray(1024))):
                 chunks_received.append(bytes(chunk))
                 bytes_received += len(chunk)
                 if bytes_received >= len(data_to_send):
@@ -312,7 +310,7 @@ class Test(unittest.TestCase):
         async with \
                 connection_pool(loop), \
                 get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-            await send(loop, connection, memoryview(data_to_send), 2097152)
+            await send(loop, connection.sock, memoryview(data_to_send), 2097152)
             await done.wait()
 
         self.assertEqual(b''.join(chunks_received), data_to_send)
@@ -337,7 +335,7 @@ class Test(unittest.TestCase):
                     connection_pool(loop), \
                     get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
                 await done.wait()
-                await send(loop, connection, memoryview(bytearray(b'-')), 1)
+                await send(loop, connection.sock, memoryview(bytearray(b'-')), 1)
 
     @async_test
     async def test_close_after_blocked_send_raises(self):
@@ -347,7 +345,7 @@ class Test(unittest.TestCase):
         data_to_send = b'abcd' * 2097152
 
         async def recv_handler(sock):
-            async for _ in recv_until_close(loop, sock, memoryview(bytearray(1024))):
+            async for _ in recv(loop, sock, memoryview(bytearray(1024))):
                 break
 
         server_task = await server(loop, null_handler, recv_handler)
@@ -358,7 +356,7 @@ class Test(unittest.TestCase):
             async with \
                     connection_pool(loop), \
                     get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-                await send(loop, connection, memoryview(data_to_send), 2097152)
+                await send(loop, connection.sock, memoryview(data_to_send), 2097152)
 
     @async_test
     async def test_send_cancel_propagates(self):
@@ -381,7 +379,7 @@ class Test(unittest.TestCase):
                     connection_pool(loop), \
                     get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
                 sending.set()
-                await send(loop, connection, memoryview(data_to_send), 2097152)
+                await send(loop, connection.sock, memoryview(data_to_send), 2097152)
 
         client_done = asyncio.Event()
 
@@ -404,7 +402,7 @@ class Test(unittest.TestCase):
         data_to_recv = b'abcd' * 100
 
         async def recv_handler(sock):
-            await send_all(loop, sock, data_to_recv, 1024)
+            await send(loop, sock, data_to_recv, 1024)
 
         server_task = await server(loop, null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
@@ -415,7 +413,7 @@ class Test(unittest.TestCase):
         async with \
                 connection_pool(loop), \
                 get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-            async for chunk in recv(loop, connection, bytearray(1)):
+            async for chunk in recv(loop, connection.sock, bytearray(1)):
                 chunks.append(bytes(chunk))
 
         self.assertEqual(b''.join(chunks), data_to_recv)
@@ -427,7 +425,7 @@ class Test(unittest.TestCase):
         data_to_recv = b'abcd' * 65536
 
         async def recv_handler(sock):
-            await send_all(loop, sock, data_to_recv, 1024)
+            await send(loop, sock, data_to_recv, 1024)
 
         server_task = await server(loop, null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
@@ -438,7 +436,7 @@ class Test(unittest.TestCase):
         async with \
                 connection_pool(loop), \
                 get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-            async for chunk in recv(loop, connection, bytearray(131072)):
+            async for chunk in recv(loop, connection.sock, bytearray(131072)):
                 chunks.append(bytes(chunk))
 
         self.assertEqual(b''.join(chunks), data_to_recv)
@@ -457,7 +455,7 @@ class Test(unittest.TestCase):
                     connection_pool(loop), \
                     get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
                 # pylint: disable=no-member
-                await recv(loop, connection, list()).__anext__()
+                await recv(loop, connection.sock, list()).__anext__()
 
     @async_test
     async def test_recv_cancel_propagates(self):
@@ -467,7 +465,7 @@ class Test(unittest.TestCase):
         received_byte = asyncio.Event()
 
         async def server_recv_handler(sock):
-            await send_all(loop, sock, b'-', 1024)
+            await send(loop, sock, b'-', 1024)
             await server_forever.wait()
 
         server_task = await server(loop, null_handler, server_recv_handler)
@@ -478,7 +476,7 @@ class Test(unittest.TestCase):
             async with \
                     connection_pool(loop), \
                     get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-                async for _ in recv(loop, connection, bytearray(1)):
+                async for _ in recv(loop, connection.sock, bytearray(1)):
                     received_byte.set()
 
         client_done = asyncio.Event()

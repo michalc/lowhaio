@@ -70,15 +70,6 @@ async def get_connection(loop, hostname, ip_address, port, ssl_context):
         raise exceptions[0]
 
 
-async def send(loop, connection, buf, chunk_bytes):
-    await send_all(loop, connection.sock, buf, chunk_bytes)
-
-
-async def recv(loop, connection, buf_memoryview):
-    async for chunk in recv_until_close(loop, connection.sock, buf_memoryview):
-        yield chunk
-
-
 async def sock_connect(loop, sock, address):
     fileno = sock.fileno()
     done = Future()
@@ -158,14 +149,14 @@ async def ssl_unwrap_socket(loop, ssl_sock):
         raise
 
 
-async def send_all(loop, sock, buf, chunk_bytes):
+async def send(loop, sock, buf, chunk_bytes):
     cursor = 0
     while cursor != len(buf):
         num_bytes = await send_at_least_one_byte(loop, sock, buf[cursor:], chunk_bytes)
         cursor += num_bytes
 
 
-async def recv_until_close(loop, sock, buf_memoryview):
+async def recv(loop, sock, buf_memoryview):
     try:
         while True:
             num_bytes = await recv_at_least_one_byte(loop, sock, buf_memoryview,
