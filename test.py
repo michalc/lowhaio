@@ -489,3 +489,52 @@ class Test(TestCase):
         await client_done.wait()
 
         self.assertEqual(client_task.cancelled(), True)
+
+    @async_test
+    async def test_non_ssl_send_recv(self):
+        loop = get_event_loop()
+
+        class NonSSLContext():
+            # pylint: disable=no-self-use
+            def wrap_socket(self, sock, *_, **__):
+                sock.__class__ = NonSSLSocket
+                return sock
+
+        class NonSSLSocket(socket):
+            __slots__ = ()
+
+            def do_handshake(self):
+                pass
+
+            def unwrap(self):
+                self.__class__ = socket
+                return self
+
+        done = Event()
+
+        data_to_send = b'abcd' * 100
+        chunks_received = []
+        bytes_received = 0
+
+        async def recv_handler(sock):
+            nonlocal bytes_received
+            async for chunk in recv(loop, sock, memoryview(bytearray(1024))):
+                chunks_received.append(bytes(chunk))
+                bytes_received += len(chunk)
+                if bytes_received >= len(data_to_send):
+                    break
+            done.set()
+
+        context = NonSSLContext()
+        context_server = NonSSLContext()
+
+        server_task = await server(loop, context_server, null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        async with \
+                connection_pool(loop), \
+                connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+            await send(loop, conn.sock, memoryview(data_to_send), 1)
+            await done.wait()
+
+        self.assertEqual(b''.join(chunks_received), data_to_send)

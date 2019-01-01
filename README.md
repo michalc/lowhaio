@@ -94,12 +94,19 @@ Two main principles inform the design of lowhaio.
 
 ```python
 class NonSSLContext():
-    def wrap_socket(self, socket):
-        socket.__class__ = NonSSLSocket
+    def wrap_socket(self, sock, *args, **kwargs):
+        sock.__class__ = NonSSLSocket
+        return sock
 
-class NonSSLSocket(socket.socket):
-    def unwrap_socket(self):
-        socket.__class__ = socket.socket
+class NonSSLSocket(socket):
+    __slots__ = ()
+
+    def do_handshake(self):
+        pass
+
+    def unwrap(self):
+        self.__class__ = socket
+        return self
 
 async with lowhaio.socket(pool, host, port, NonSSLContext(),...):
     ...
