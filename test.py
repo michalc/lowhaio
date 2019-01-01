@@ -2,7 +2,6 @@ from asyncio import (
     Event,
     Future,
     get_event_loop,
-    get_running_loop,
     sleep,
 )
 from unittest import (
@@ -141,7 +140,7 @@ class Test(TestCase):
 
     @async_test
     async def test_server_close_after_client_not_raises(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         server_task = await server(loop, null_handler, null_handler)
@@ -155,7 +154,7 @@ class Test(TestCase):
 
     @async_test
     async def test_server_cancel_then_client_send_raises(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         server_wait_forever = Future()
@@ -177,7 +176,7 @@ class Test(TestCase):
 
     @async_test
     async def test_server_cancel_then_connection_raises(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         server_task = await server(loop, null_handler, null_handler)
@@ -196,7 +195,7 @@ class Test(TestCase):
 
     @async_test
     async def test_incompatible_context_raises(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
         context_incompatible = create_default_context()
 
@@ -214,7 +213,7 @@ class Test(TestCase):
 
     @async_test
     async def test_bad_ssl_handshake_raises(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         async def broken_pre_ssl_handler(sock):
@@ -230,7 +229,7 @@ class Test(TestCase):
 
     @async_test
     async def test_bad_close_raises(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         closed = Event()
@@ -251,7 +250,7 @@ class Test(TestCase):
 
     @async_test
     async def test_send_small(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         done = Event()
@@ -282,7 +281,7 @@ class Test(TestCase):
 
     @async_test
     async def test_send_large(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         done = Event()
@@ -314,7 +313,7 @@ class Test(TestCase):
 
     @async_test
     async def test_send_after_close_raises(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         done = Event()
@@ -335,7 +334,7 @@ class Test(TestCase):
 
     @async_test
     async def test_close_after_blocked_send_raises(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         # Large amount of data is required to cause SSLWantWriteError
@@ -356,7 +355,7 @@ class Test(TestCase):
 
     @async_test
     async def test_send_cancel_propagates(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         data_to_send = b'abcd' * 2097152
@@ -392,7 +391,7 @@ class Test(TestCase):
 
     @async_test
     async def test_recv_small(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         data_to_recv = b'abcd' * 100
@@ -414,7 +413,7 @@ class Test(TestCase):
 
     @async_test
     async def test_recv_large(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         data_to_recv = b'abcd' * 65536
@@ -436,7 +435,7 @@ class Test(TestCase):
 
     @async_test
     async def test_recv_into_bad_array_raises(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         server_task = await server(loop, null_handler, null_handler)
@@ -451,7 +450,7 @@ class Test(TestCase):
 
     @async_test
     async def test_recv_cancel_propagates(self):
-        loop = get_running_loop()
+        loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         server_forever = Event()
