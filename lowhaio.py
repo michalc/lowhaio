@@ -17,10 +17,11 @@ class ConnectionPool:
 
 
 class Connection:
-    __slots__ = ('sock', )
+    __slots__ = ('sock', 'buf_memoryview')
 
-    def __init__(self, sock):
+    def __init__(self, sock, buf_memoryview):
         self.sock = sock
+        self.buf_memoryview = buf_memoryview
 
 
 class AsyncContextManager:
@@ -56,7 +57,7 @@ async def connection_pool(_):
 
 
 @asynccontextmanager
-async def connection(loop, hostname, ip_address, port, ssl_context):
+async def connection(loop, hostname, ip_address, port, ssl_context, buf_memoryview):
 
     async def cleanup_sock_close():
         sock.close()
@@ -87,7 +88,7 @@ async def connection(loop, hostname, ip_address, port, ssl_context):
         cleanups.append(cleanup_ssl_unwrap)
         await ssl_handshake(loop, sock)
 
-        yield Connection(sock)
+        yield Connection(sock, buf_memoryview)
     except BaseException as exception:
         exceptions.append(exception)
     finally:
@@ -180,19 +181,20 @@ async def ssl_unwrap_socket(loop, ssl_sock):
         raise
 
 
-async def send(loop, sock, buf, chunk_bytes):
+async def send(loop, conn, buf_memoryview, chunk_bytes):
     cursor = 0
-    while cursor != len(buf):
-        num_bytes = await send_at_least_one_byte(loop, sock, buf[cursor:], chunk_bytes)
+    while cursor != len(buf_memoryview):
+        num_bytes = await send_at_least_one_byte(loop, conn.sock,
+                                                 buf_memoryview[cursor:], chunk_bytes)
         cursor += num_bytes
 
 
-async def recv(loop, sock, buf_memoryview):
+async def recv(loop, conn):
     num_bytes = 1
     while num_bytes:
-        num_bytes = await recv_at_least_one_byte(loop, sock, buf_memoryview,
-                                                 len(buf_memoryview))
-        yield bytearray(buf_memoryview[:num_bytes])
+        num_bytes = await recv_at_least_one_byte(loop, conn.sock,
+                                                 conn.buf_memoryview, len(conn.buf_memoryview))
+        yield bytearray(conn.buf_memoryview[:num_bytes])
 
 
 async def send_at_least_one_byte(loop, sock, buf, chunk_bytes):

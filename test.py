@@ -26,6 +26,7 @@ from lowhaio import (
     send,
     ssl_handshake,
     ssl_unwrap_socket,
+    Connection,
 )
 
 
@@ -69,7 +70,7 @@ async def server(loop, ssl_context, pre_ssl_client_handler, client_handler):
                 sock = ssl_context.wrap_socket(
                     sock, server_side=True, do_handshake_on_connect=False)
                 await ssl_handshake(loop, sock)
-                await client_handler(sock)
+                await client_handler(Connection(sock, memoryview(bytearray(1024))))
             finally:
                 try:
                     sock = await ssl_unwrap_socket(loop, sock)
@@ -149,13 +150,14 @@ class Test(TestCase):
     async def test_server_close_after_client_not_raises(self):
         loop = get_event_loop()
         context = ssl_context_client()
+        buf_memoryview = memoryview(bytearray())
 
         server_task = await server(loop, ssl_context_server(), null_handler, null_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         async with \
                 connection_pool(loop), \
-                connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+                connection(loop, 'localhost', '127.0.0.1', 8080, context, buf_memoryview) as conn:
             conn.sock.send(b'-' * 128)
             await sleep(0)
 
@@ -163,6 +165,7 @@ class Test(TestCase):
     async def test_server_cancel_then_client_send_raises(self):
         loop = get_event_loop()
         context = ssl_context_client()
+        buf_memoryview = memoryview(bytearray())
 
         server_wait_forever = Future()
 
@@ -175,7 +178,8 @@ class Test(TestCase):
         with self.assertRaises(ConnectionError):
             async with \
                     connection_pool(loop), \
-                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+                    connection(loop, 'localhost', '127.0.0.1', 8080,
+                               context, buf_memoryview) as conn:
                 server_task.cancel()
                 while True:
                     conn.sock.send(b'-')
@@ -185,42 +189,48 @@ class Test(TestCase):
     async def test_server_cancel_then_connection_raises(self):
         loop = get_event_loop()
         context = ssl_context_client()
+        buf_memoryview = memoryview(bytearray())
 
         server_task = await server(loop, ssl_context_server(), null_handler, null_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(ConnectionRefusedError):
             async with connection_pool(loop):
-                async with connection(loop, 'localhost', '127.0.0.1', 8080, context):
+                async with connection(loop, 'localhost', '127.0.0.1', 8080,
+                                      context, buf_memoryview):
                     pass
 
                 server_task.cancel()
                 await sleep(0)
                 # pylint: disable=no-member
-                await connection(loop, 'localhost', '127.0.0.1', 8080, context).__aenter__()
+                await connection(loop, 'localhost', '127.0.0.1', 8080,
+                                 context, buf_memoryview).__aenter__()
 
     @async_test
     async def test_incompatible_context_raises(self):
         loop = get_event_loop()
         context = ssl_context_client()
         context_incompatible = create_default_context()
+        buf_memoryview = memoryview(bytearray())
 
         server_task = await server(loop, ssl_context_server(), null_handler, null_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(SSLCertVerificationError):
             async with connection_pool(loop):
-                async with connection(loop, 'localhost', '127.0.0.1', 8080, context):
+                async with connection(loop, 'localhost', '127.0.0.1', 8080,
+                                      context, buf_memoryview):
                     pass
 
                 # pylint: disable=no-member
                 await connection(loop, 'localhost', '127.0.0.1', 8080,
-                                 context_incompatible).__aenter__()
+                                 context_incompatible, bytearray()).__aenter__()
 
     @async_test
     async def test_bad_ssl_handshake_raises(self):
         loop = get_event_loop()
         context = ssl_context_client()
+        buf_memoryview = memoryview(bytearray())
 
         async def broken_pre_ssl(sock):
             sock.send(b'-')
@@ -231,7 +241,8 @@ class Test(TestCase):
         with self.assertRaises(SSLError):
             async with connection_pool(loop):
                 # pylint: disable=no-member
-                await connection(loop, 'localhost', '127.0.0.1', 8080, context).__aenter__()
+                await connection(loop, 'localhost', '127.0.0.1', 8080,
+                                 context, buf_memoryview).__aenter__()
 
     @async_test
     async def test_bad_close_raises(self):
@@ -239,9 +250,10 @@ class Test(TestCase):
         context = ssl_context_client()
 
         closed = Event()
+        buf_memoryview = memoryview(bytearray())
 
-        async def early_close(ssl_sock):
-            ssl_sock.close()
+        async def early_close(conn):
+            conn.sock.close()
             closed.set()
 
         server_task = await server(loop, ssl_context_server(), null_handler, early_close)
@@ -250,7 +262,8 @@ class Test(TestCase):
         with self.assertRaises(OSError):
             async with \
                     connection_pool(loop), \
-                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+                    connection(loop, 'localhost', '127.0.0.1', 8080,
+                               context, buf_memoryview) as conn:
                 await closed.wait()
                 conn.sock.send(b'-' * 128)
 
@@ -260,14 +273,14 @@ class Test(TestCase):
         context = ssl_context_client()
 
         done = Event()
-
+        buf_memoryview = memoryview(bytearray())
         data_to_send = b'abcd' * 100
         chunks_received = []
         bytes_received = 0
 
-        async def recv_handler(sock):
+        async def recv_handler(conn):
             nonlocal bytes_received
-            async for chunk in recv(loop, sock, memoryview(bytearray(1024))):
+            async for chunk in recv(loop, conn):
                 chunks_received.append(bytes(chunk))
                 bytes_received += len(chunk)
                 if bytes_received >= len(data_to_send):
@@ -279,8 +292,8 @@ class Test(TestCase):
 
         async with \
                 connection_pool(loop), \
-                connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
-            await send(loop, conn.sock, memoryview(data_to_send), 1)
+                connection(loop, 'localhost', '127.0.0.1', 8080, context, buf_memoryview) as conn:
+            await send(loop, conn, memoryview(data_to_send), 1)
             await done.wait()
 
         self.assertEqual(b''.join(chunks_received), data_to_send)
@@ -291,14 +304,15 @@ class Test(TestCase):
         context = ssl_context_client()
 
         done = Event()
+        buf_memoryview = memoryview(bytearray())
         # Large amount of data is required to cause SSLWantWriteError
         data_to_send = b'abcd' * 2097152
         chunks_received = []
         bytes_received = 0
 
-        async def recv_handler(sock):
+        async def recv_handler(conn):
             nonlocal bytes_received
-            async for chunk in recv(loop, sock, memoryview(bytearray(1024))):
+            async for chunk in recv(loop, conn):
                 chunks_received.append(bytes(chunk))
                 bytes_received += len(chunk)
                 if bytes_received >= len(data_to_send):
@@ -310,8 +324,8 @@ class Test(TestCase):
 
         async with \
                 connection_pool(loop), \
-                connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
-            await send(loop, conn.sock, memoryview(data_to_send), 2097152)
+                connection(loop, 'localhost', '127.0.0.1', 8080, context, buf_memoryview) as conn:
+            await send(loop, conn, memoryview(data_to_send), 2097152)
             await done.wait()
 
         self.assertEqual(b''.join(chunks_received), data_to_send)
@@ -321,11 +335,12 @@ class Test(TestCase):
     async def test_send_after_close_raises(self):
         loop = get_event_loop()
         context = ssl_context_client()
+        buf_memoryview = memoryview(bytearray())
 
         done = Event()
 
-        async def recv_handler(sock):
-            sock.close()
+        async def recv_handler(conn):
+            conn.sock.close()
             done.set()
 
         server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
@@ -334,20 +349,22 @@ class Test(TestCase):
         with self.assertRaises(BrokenPipeError):
             async with \
                     connection_pool(loop), \
-                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+                    connection(loop, 'localhost', '127.0.0.1', 8080,
+                               context, buf_memoryview) as conn:
                 await done.wait()
-                await send(loop, conn.sock, memoryview(bytearray(b'-')), 1)
+                await send(loop, conn, memoryview(bytearray(b'-')), 1)
 
     @async_test
     async def test_close_after_blocked_send_raises(self):
         loop = get_event_loop()
         context = ssl_context_client()
+        buf_memoryview = memoryview(bytearray())
 
         # Large amount of data is required to cause SSLWantWriteError
         data_to_send = b'abcd' * 2097152
 
-        async def recv_handler(sock):
-            async for _ in recv(loop, sock, memoryview(bytearray(1024))):
+        async def recv_handler(conn):
+            async for _ in recv(loop, conn):
                 break
 
         server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
@@ -356,13 +373,15 @@ class Test(TestCase):
         with self.assertRaises(OSError):
             async with \
                     connection_pool(loop), \
-                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
-                await send(loop, conn.sock, memoryview(data_to_send), 2097152)
+                    connection(loop, 'localhost', '127.0.0.1', 8080,
+                               context, buf_memoryview) as conn:
+                await send(loop, conn, memoryview(data_to_send), 2097152)
 
     @async_test
     async def test_send_cancel_propagates(self):
         loop = get_event_loop()
         context = ssl_context_client()
+        buf_memoryview = memoryview(bytearray())
 
         data_to_send = b'abcd' * 2097152
         sending = Event()
@@ -377,9 +396,10 @@ class Test(TestCase):
         async def client_recv():
             async with \
                     connection_pool(loop), \
-                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+                    connection(loop, 'localhost', '127.0.0.1', 8080,
+                               context, buf_memoryview) as conn:
                 sending.set()
-                await send(loop, conn.sock, memoryview(data_to_send), 2097152)
+                await send(loop, conn, memoryview(data_to_send), 2097152)
 
         client_done = Event()
 
@@ -402,8 +422,8 @@ class Test(TestCase):
 
         data_to_recv = b'abcd' * 100
 
-        async def recv_handler(sock):
-            await send(loop, sock, data_to_recv, 1024)
+        async def recv_handler(conn):
+            await send(loop, conn, data_to_recv, 1024)
 
         server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
@@ -411,8 +431,8 @@ class Test(TestCase):
         chunks = []
         async with \
                 connection_pool(loop), \
-                connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
-            async for chunk in recv(loop, conn.sock, bytearray(1)):
+                connection(loop, 'localhost', '127.0.0.1', 8080, context, bytearray(1)) as conn:
+            async for chunk in recv(loop, conn):
                 chunks.append(bytes(chunk))
 
         self.assertEqual(b''.join(chunks), data_to_recv)
@@ -422,6 +442,7 @@ class Test(TestCase):
         loop = get_event_loop()
         context = ssl_context_client()
 
+        buf_memoryview = memoryview(bytearray(131072))
         data_to_recv = b'abcd' * 65536
 
         async def recv_handler(sock):
@@ -433,8 +454,8 @@ class Test(TestCase):
         chunks = []
         async with \
                 connection_pool(loop), \
-                connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
-            async for chunk in recv(loop, conn.sock, bytearray(131072)):
+                connection(loop, 'localhost', '127.0.0.1', 8080, context, buf_memoryview) as conn:
+            async for chunk in recv(loop, conn):
                 chunks.append(bytes(chunk))
 
         self.assertEqual(b''.join(chunks), data_to_recv)
@@ -450,20 +471,21 @@ class Test(TestCase):
         with self.assertRaises(TypeError):
             async with \
                     connection_pool(loop), \
-                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+                    connection(loop, 'localhost', '127.0.0.1', 8080, context, list()) as conn:
                 # pylint: disable=no-member
-                await recv(loop, conn.sock, list()).__anext__()
+                await recv(loop, conn).__anext__()
 
     @async_test
     async def test_recv_cancel_propagates(self):
         loop = get_event_loop()
         context = ssl_context_client()
 
+        buf_memoryview = bytearray(1)
         server_forever = Event()
         received_byte = Event()
 
-        async def server_recv_handler(sock):
-            await send(loop, sock, b'-', 1024)
+        async def server_recv_handler(conn):
+            await send(loop, conn, b'-', 1024)
             await server_forever.wait()
 
         server_task = await server(loop, ssl_context_server(), null_handler, server_recv_handler)
@@ -472,8 +494,9 @@ class Test(TestCase):
         async def client_recv():
             async with \
                     connection_pool(loop), \
-                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
-                async for _ in recv(loop, conn.sock, bytearray(1)):
+                    connection(loop, 'localhost', '127.0.0.1', 8080,
+                               context, buf_memoryview) as conn:
+                async for _ in recv(loop, conn):
                     received_byte.set()
 
         client_done = Event()
@@ -493,6 +516,7 @@ class Test(TestCase):
     @async_test
     async def test_send_non_ssl(self):
         loop = get_event_loop()
+        buf_memoryview = memoryview(bytearray(1))
 
         class NonSSLContext():
             # pylint: disable=no-self-use
@@ -516,9 +540,9 @@ class Test(TestCase):
         chunks_received = []
         bytes_received = 0
 
-        async def recv_handler(sock):
+        async def recv_handler(conn):
             nonlocal bytes_received
-            async for chunk in recv(loop, sock, memoryview(bytearray(1024))):
+            async for chunk in recv(loop, conn):
                 chunks_received.append(bytes(chunk))
                 bytes_received += len(chunk)
                 if bytes_received >= len(data_to_send):
@@ -533,8 +557,8 @@ class Test(TestCase):
 
         async with \
                 connection_pool(loop), \
-                connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
-            await send(loop, conn.sock, memoryview(data_to_send), 1)
+                connection(loop, 'localhost', '127.0.0.1', 8080, context, buf_memoryview) as conn:
+            await send(loop, conn, memoryview(data_to_send), 1)
             await done.wait()
 
         self.assertEqual(b''.join(chunks_received), data_to_send)
