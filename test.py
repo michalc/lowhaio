@@ -491,7 +491,7 @@ class Test(TestCase):
         self.assertEqual(client_task.cancelled(), True)
 
     @async_test
-    async def test_non_ssl_send_recv(self):
+    async def test_send_non_ssl(self):
         loop = get_event_loop()
 
         class NonSSLContext():
