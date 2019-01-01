@@ -55,25 +55,20 @@ async def server(loop, pre_ssl_client_handler, client_handler):
     async def client_task(sock):
         await pre_ssl_client_handler(sock)
 
-        ssl_sock = None
         try:
             try:
-                ssl_sock = ssl_context.wrap_socket(
+                sock = ssl_context.wrap_socket(
                     sock, server_side=True, do_handshake_on_connect=False)
-                await ssl_handshake(loop, ssl_sock)
-                await client_handler(ssl_sock)
+                await ssl_handshake(loop, sock)
+                await client_handler(sock)
             finally:
                 try:
-                    sock = await ssl_unwrap_socket(loop, ssl_sock) if ssl_sock else sock
+                    sock = await ssl_unwrap_socket(loop, sock)
                 finally:
                     try:
                         sock.shutdown(SHUT_RDWR)
                     finally:
-                        try:
-                            # Can get ResourceWarning if not have this
-                            ssl_sock.close()
-                        finally:
-                            sock.close()
+                        sock.close()
         except BaseException:
             pass
 
