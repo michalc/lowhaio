@@ -1,5 +1,12 @@
 # lowhaio [![CircleCI](https://circleci.com/gh/michalc/lowhaio.svg?style=svg)](https://circleci.com/gh/michalc/lowhaio) [![Maintainability](https://api.codeclimate.com/v1/badges/418d72f1de909bff27b6/maintainability)](https://codeclimate.com/github/michalc/lowhaio/maintainability) [![Test Coverage](https://api.codeclimate.com/v1/badges/418d72f1de909bff27b6/test_coverage)](https://codeclimate.com/github/michalc/lowhaio/test_coverage)
 
+---
+
+Work in progress. These docs serve as a rough design spec.
+
+---
+
+
 A lightweight and dependency-free Python asyncio HTTP/1.1 client. Rather than abstracting away the HTTP protocol or aspects of the connection, the provided API is a small suite of 6 utility functions that exposes low-level behaviour. This provides both flexibility and minimisation of unnecessary code and processing in the production application. Clients can of course wrap lowhaio calls in their own functions to reduce duplication or provide abstractions as they see fit.
 
 lowhaio is HTTPS-first: non-encrypted HTTP connections are possible, but require a bit more client code.
@@ -57,9 +64,18 @@ async with \
 
 Two main principles inform the design of lowhaio.
 
-- Overal understanding of what the final application is doing is a primary concern, and this covers _both_ lowhaio client code and lowhaio internal code. Making an elegant API is _not_ significantly prioritised over a overal understanding what the application is doing in terms of data transformations or bytes sent/received. For example, the API has changed during development because it meant the internal code ended up with unnecessary data transformations/movement.
+- Overal understanding of what the final application is doing is a primary concern, and this covers _both_ lowhaio client code and lowhaio internal code. Making an elegant API is _not_ significantly prioritised over ease of overall understanding what the application is doing in terms of data transformations or bytes sent/received. For example, the API has changed during development to simpliciy/optimise the internal code.
 
-- All code in the client is required for all uses of the client: nothing is unnecessary. HTTP and HTTPS require different code paths, and so HTTPS is chosen to be supported out of the box over unencrypted HTTP.
+- All code in the client is required for all uses of the client: nothing is unnecessary. For example, HTTP and HTTPS require different code paths, and so HTTPS is chosen to be supported out of the box over unencrypted HTTP. HTTP is possible, but with _more_ code.
+
+
+## Testing aims
+
+- 100% code coverage.
+
+- Patching in tests done only to avoid non-determinism or slow tests, e.g. to fast-forward time when testing timeout behaviour.
+
+- No direct tests of private functions.
 
 
 ## Recipies
