@@ -1,4 +1,10 @@
-import asyncio
+from asyncio import (
+    Event,
+    Future,
+    get_event_loop,
+    get_running_loop,
+    sleep,
+)
 from unittest import (
     TestCase,
 )
@@ -27,7 +33,7 @@ from lowhaio import (
 def async_test(func):
     def wrapper(*args, **kwargs):
         future = func(*args, **kwargs)
-        loop = asyncio.get_event_loop()
+        loop = get_event_loop()
         loop.run_until_complete(future)
     return wrapper
 
@@ -42,7 +48,7 @@ async def server(loop, pre_ssl_client_handler, client_handler):
     server_sock.bind(('', 8080))
     server_sock.listen(IPPROTO_TCP)
 
-    listening = asyncio.Event()
+    listening = Event()
 
     def on_listening():
         listening.set()
@@ -86,7 +92,7 @@ async def server(loop, pre_ssl_client_handler, client_handler):
             server_sock.close()
             for task in client_tasks:
                 task.cancel()
-            await asyncio.sleep(0)
+            await sleep(0)
 
     task = loop.create_task(server_task())
     await listening.wait()
@@ -95,12 +101,12 @@ async def server(loop, pre_ssl_client_handler, client_handler):
 
 async def cancel(task):
     task.cancel()
-    await asyncio.sleep(0)
+    await sleep(0)
 
 
 async def sock_accept(loop, server_sock, on_listening, create_client_task):
     fileno = server_sock.fileno()
-    done = asyncio.Future()
+    done = Future()
 
     def accept():
         try:
@@ -135,7 +141,7 @@ class Test(TestCase):
 
     @async_test
     async def test_server_close_after_client_not_raises(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         server_task = await server(loop, null_handler, null_handler)
@@ -145,14 +151,14 @@ class Test(TestCase):
                 connection_pool(loop), \
                 get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
             connection.sock.send(b'-' * 128)
-            await asyncio.sleep(0)
+            await sleep(0)
 
     @async_test
     async def test_server_cancel_then_client_send_raises(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
-        server_wait_forever = asyncio.Future()
+        server_wait_forever = Future()
 
         async def server_client(_):
             await server_wait_forever
@@ -167,11 +173,11 @@ class Test(TestCase):
                 server_task.cancel()
                 while True:
                     connection.sock.send(b'-')
-                    await asyncio.sleep(0)
+                    await sleep(0)
 
     @async_test
     async def test_server_cancel_then_connection_raises(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         server_task = await server(loop, null_handler, null_handler)
@@ -184,13 +190,13 @@ class Test(TestCase):
                     pass
 
                 server_task.cancel()
-                await asyncio.sleep(0)
+                await sleep(0)
                 # pylint: disable=no-member
                 await get_connection(loop, 'localhost', '127.0.0.1', 8080, context).__aenter__()
 
     @async_test
     async def test_incompatible_context_raises(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
         context_incompatible = create_default_context()
 
@@ -208,7 +214,7 @@ class Test(TestCase):
 
     @async_test
     async def test_bad_ssl_handshake_raises(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         async def broken_pre_ssl_handler(sock):
@@ -224,10 +230,10 @@ class Test(TestCase):
 
     @async_test
     async def test_bad_close_raises(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
-        closed = asyncio.Event()
+        closed = Event()
 
         async def early_close(ssl_sock):
             ssl_sock.close()
@@ -245,10 +251,10 @@ class Test(TestCase):
 
     @async_test
     async def test_send_small(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
-        done = asyncio.Event()
+        done = Event()
 
         data_to_send = b'abcd' * 100
         chunks_received = []
@@ -276,10 +282,10 @@ class Test(TestCase):
 
     @async_test
     async def test_send_large(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
-        done = asyncio.Event()
+        done = Event()
         # Large amount of data is required to cause SSLWantWriteError
         data_to_send = b'abcd' * 2097152
         chunks_received = []
@@ -308,10 +314,10 @@ class Test(TestCase):
 
     @async_test
     async def test_send_after_close_raises(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
-        done = asyncio.Event()
+        done = Event()
 
         async def recv_handler(sock):
             sock.close()
@@ -329,7 +335,7 @@ class Test(TestCase):
 
     @async_test
     async def test_close_after_blocked_send_raises(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         # Large amount of data is required to cause SSLWantWriteError
@@ -350,12 +356,12 @@ class Test(TestCase):
 
     @async_test
     async def test_send_cancel_propagates(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         data_to_send = b'abcd' * 2097152
-        sending = asyncio.Event()
-        server_forever = asyncio.Event()
+        sending = Event()
+        server_forever = Event()
 
         async def recv_handler(_):
             await server_forever.wait()
@@ -370,7 +376,7 @@ class Test(TestCase):
                 sending.set()
                 await send(loop, connection.sock, memoryview(data_to_send), 2097152)
 
-        client_done = asyncio.Event()
+        client_done = Event()
 
         def set_client_done(_):
             client_done.set()
@@ -386,7 +392,7 @@ class Test(TestCase):
 
     @async_test
     async def test_recv_small(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         data_to_recv = b'abcd' * 100
@@ -408,7 +414,7 @@ class Test(TestCase):
 
     @async_test
     async def test_recv_large(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         data_to_recv = b'abcd' * 65536
@@ -430,7 +436,7 @@ class Test(TestCase):
 
     @async_test
     async def test_recv_into_bad_array_raises(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
         server_task = await server(loop, null_handler, null_handler)
@@ -445,11 +451,11 @@ class Test(TestCase):
 
     @async_test
     async def test_recv_cancel_propagates(self):
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
-        server_forever = asyncio.Event()
-        received_byte = asyncio.Event()
+        server_forever = Event()
+        received_byte = Event()
 
         async def server_recv_handler(sock):
             await send(loop, sock, b'-', 1024)
@@ -465,7 +471,7 @@ class Test(TestCase):
                 async for _ in recv(loop, connection.sock, bytearray(1)):
                     received_byte.set()
 
-        client_done = asyncio.Event()
+        client_done = Event()
 
         def set_client_done(_):
             client_done.set()
