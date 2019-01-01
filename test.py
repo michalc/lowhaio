@@ -1,12 +1,7 @@
 import asyncio
 import unittest
 from socket import (
-    AF_INET,
-    IPPROTO_TCP,
-    SHUT_RDWR,
-    SO_REUSEADDR,
-    SOCK_STREAM,
-    SOL_SOCKET,
+    AF_INET, IPPROTO_TCP, SHUT_RDWR, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET,
     socket,
 )
 from ssl import (
