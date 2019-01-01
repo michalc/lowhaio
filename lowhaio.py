@@ -62,7 +62,10 @@ async def connection(loop, hostname, ip_address, port, ssl_context):
         sock.close()
 
     async def cleanup_sock_shutdown():
-        sock.shutdown(SHUT_RDWR)
+        try:
+            sock.shutdown(SHUT_RDWR)
+        except BaseException:
+            pass
 
     async def cleanup_ssl_unwrap():
         nonlocal sock
