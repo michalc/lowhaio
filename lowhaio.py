@@ -188,13 +188,11 @@ async def send(loop, sock, buf, chunk_bytes):
 
 
 async def recv(loop, sock, buf_memoryview):
-    try:
-        while True:
-            num_bytes = await recv_at_least_one_byte(loop, sock, buf_memoryview,
-                                                     len(buf_memoryview))
-            yield bytearray(buf_memoryview[:num_bytes])
-    except BrokenPipeError:
-        pass
+    num_bytes = 1
+    while num_bytes:
+        num_bytes = await recv_at_least_one_byte(loop, sock, buf_memoryview,
+                                                 len(buf_memoryview))
+        yield bytearray(buf_memoryview[:num_bytes])
 
 
 async def send_at_least_one_byte(loop, sock, buf, chunk_bytes):
@@ -242,9 +240,7 @@ async def recv_at_least_one_byte(loop, sock, buf_memoryview, chunk_bytes):
                 done.set_exception(exception)
         else:
             loop.remove_reader(fileno)
-            if not done.done() and num_bytes == 0:
-                done.set_exception(BrokenPipeError())
-            elif not done.done():
+            if not done.done():
                 done.set_result(num_bytes)
 
     loop.add_reader(fileno, read)
