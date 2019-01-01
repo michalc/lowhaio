@@ -1,5 +1,7 @@
 import asyncio
-import unittest
+from unittest import (
+    TestCase,
+)
 from socket import (
     AF_INET, IPPROTO_TCP, SHUT_RDWR, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET,
     socket,
@@ -126,7 +128,7 @@ async def null_handler(_):
     pass
 
 
-class Test(unittest.TestCase):
+class Test(TestCase):
 
     def add_async_cleanup(self, loop, coroutine, *args):
         self.addCleanup(loop.run_until_complete, coroutine(*args))
