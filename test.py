@@ -43,6 +43,10 @@ def ssl_context_server():
     return ssl_context
 
 
+def ssl_context_client():
+    return SSLContext(PROTOCOL_TLSv1_2)
+
+
 async def server(loop, ssl_context, pre_ssl_client_handler, client_handler):
     server_sock = socket(family=AF_INET, type=SOCK_STREAM, proto=IPPROTO_TCP)
     server_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -144,7 +148,7 @@ class Test(TestCase):
     @async_test
     async def test_server_close_after_client_not_raises(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         server_task = await server(loop, ssl_context_server(), null_handler, null_handler)
         self.add_async_cleanup(loop, cancel, server_task)
@@ -158,7 +162,7 @@ class Test(TestCase):
     @async_test
     async def test_server_cancel_then_client_send_raises(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         server_wait_forever = Future()
 
@@ -180,7 +184,7 @@ class Test(TestCase):
     @async_test
     async def test_server_cancel_then_connection_raises(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         server_task = await server(loop, ssl_context_server(), null_handler, null_handler)
         self.add_async_cleanup(loop, cancel, server_task)
@@ -198,7 +202,7 @@ class Test(TestCase):
     @async_test
     async def test_incompatible_context_raises(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
         context_incompatible = create_default_context()
 
         server_task = await server(loop, ssl_context_server(), null_handler, null_handler)
@@ -216,7 +220,7 @@ class Test(TestCase):
     @async_test
     async def test_bad_ssl_handshake_raises(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         async def broken_pre_ssl(sock):
             sock.send(b'-')
@@ -232,7 +236,7 @@ class Test(TestCase):
     @async_test
     async def test_bad_close_raises(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         closed = Event()
 
@@ -253,7 +257,7 @@ class Test(TestCase):
     @async_test
     async def test_send_small(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         done = Event()
 
@@ -284,7 +288,7 @@ class Test(TestCase):
     @async_test
     async def test_send_large(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         done = Event()
         # Large amount of data is required to cause SSLWantWriteError
@@ -316,7 +320,7 @@ class Test(TestCase):
     @async_test
     async def test_send_after_close_raises(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         done = Event()
 
@@ -337,7 +341,7 @@ class Test(TestCase):
     @async_test
     async def test_close_after_blocked_send_raises(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         # Large amount of data is required to cause SSLWantWriteError
         data_to_send = b'abcd' * 2097152
@@ -358,7 +362,7 @@ class Test(TestCase):
     @async_test
     async def test_send_cancel_propagates(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         data_to_send = b'abcd' * 2097152
         sending = Event()
@@ -394,7 +398,7 @@ class Test(TestCase):
     @async_test
     async def test_recv_small(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         data_to_recv = b'abcd' * 100
 
@@ -416,7 +420,7 @@ class Test(TestCase):
     @async_test
     async def test_recv_large(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         data_to_recv = b'abcd' * 65536
 
@@ -438,7 +442,7 @@ class Test(TestCase):
     @async_test
     async def test_recv_into_bad_array_raises(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         server_task = await server(loop, ssl_context_server(), null_handler, null_handler)
         self.add_async_cleanup(loop, cancel, server_task)
@@ -453,7 +457,7 @@ class Test(TestCase):
     @async_test
     async def test_recv_cancel_propagates(self):
         loop = get_event_loop()
-        context = SSLContext(PROTOCOL_TLSv1_2)
+        context = ssl_context_client()
 
         server_forever = Event()
         received_byte = Event()
