@@ -56,7 +56,7 @@ async def connection_pool(_):
 
 
 @asynccontextmanager
-async def get_connection(loop, hostname, ip_address, port, ssl_context):
+async def connection(loop, hostname, ip_address, port, ssl_context):
 
     async def cleanup_sock_close():
         sock.close()

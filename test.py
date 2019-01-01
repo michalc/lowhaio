@@ -20,10 +20,10 @@ from ssl import (
 )
 
 from lowhaio import (
+    connection,
     connection_pool,
-    get_connection,
-    send,
     recv,
+    send,
     ssl_handshake,
     ssl_unwrap_socket,
 )
@@ -148,8 +148,8 @@ class Test(TestCase):
 
         async with \
                 connection_pool(loop), \
-                get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-            connection.sock.send(b'-' * 128)
+                connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+            conn.sock.send(b'-' * 128)
             await sleep(0)
 
     @async_test
@@ -168,10 +168,10 @@ class Test(TestCase):
         with self.assertRaises(ConnectionError):
             async with \
                     connection_pool(loop), \
-                    get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
+                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
                 server_task.cancel()
                 while True:
-                    connection.sock.send(b'-')
+                    conn.sock.send(b'-')
                     await sleep(0)
 
     @async_test
@@ -184,14 +184,13 @@ class Test(TestCase):
 
         with self.assertRaises(ConnectionRefusedError):
             async with connection_pool(loop):
-                async with get_connection(loop, 'localhost', '127.0.0.1', 8080,
-                                          SSLContext(PROTOCOL_TLSv1_2)):
+                async with connection(loop, 'localhost', '127.0.0.1', 8080, context):
                     pass
 
                 server_task.cancel()
                 await sleep(0)
                 # pylint: disable=no-member
-                await get_connection(loop, 'localhost', '127.0.0.1', 8080, context).__aenter__()
+                await connection(loop, 'localhost', '127.0.0.1', 8080, context).__aenter__()
 
     @async_test
     async def test_incompatible_context_raises(self):
@@ -204,12 +203,12 @@ class Test(TestCase):
 
         with self.assertRaises(SSLCertVerificationError):
             async with connection_pool(loop):
-                async with get_connection(loop, 'localhost', '127.0.0.1', 8080, context):
+                async with connection(loop, 'localhost', '127.0.0.1', 8080, context):
                     pass
 
                 # pylint: disable=no-member
-                await get_connection(loop, 'localhost', '127.0.0.1', 8080,
-                                     context_incompatible).__aenter__()
+                await connection(loop, 'localhost', '127.0.0.1', 8080,
+                                 context_incompatible).__aenter__()
 
     @async_test
     async def test_bad_ssl_handshake_raises(self):
@@ -225,7 +224,7 @@ class Test(TestCase):
         with self.assertRaises(SSLError):
             async with connection_pool(loop):
                 # pylint: disable=no-member
-                await get_connection(loop, 'localhost', '127.0.0.1', 8080, context).__aenter__()
+                await connection(loop, 'localhost', '127.0.0.1', 8080, context).__aenter__()
 
     @async_test
     async def test_bad_close_raises(self):
@@ -244,9 +243,9 @@ class Test(TestCase):
         with self.assertRaises(OSError):
             async with \
                     connection_pool(loop), \
-                    get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
+                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
                 await closed.wait()
-                connection.sock.send(b'-' * 128)
+                conn.sock.send(b'-' * 128)
 
     @async_test
     async def test_send_small(self):
@@ -273,8 +272,8 @@ class Test(TestCase):
 
         async with \
                 connection_pool(loop), \
-                get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-            await send(loop, connection.sock, memoryview(data_to_send), 1)
+                connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+            await send(loop, conn.sock, memoryview(data_to_send), 1)
             await done.wait()
 
         self.assertEqual(b''.join(chunks_received), data_to_send)
@@ -304,8 +303,8 @@ class Test(TestCase):
 
         async with \
                 connection_pool(loop), \
-                get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-            await send(loop, connection.sock, memoryview(data_to_send), 2097152)
+                connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+            await send(loop, conn.sock, memoryview(data_to_send), 2097152)
             await done.wait()
 
         self.assertEqual(b''.join(chunks_received), data_to_send)
@@ -328,9 +327,9 @@ class Test(TestCase):
         with self.assertRaises(BrokenPipeError):
             async with \
                     connection_pool(loop), \
-                    get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
+                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
                 await done.wait()
-                await send(loop, connection.sock, memoryview(bytearray(b'-')), 1)
+                await send(loop, conn.sock, memoryview(bytearray(b'-')), 1)
 
     @async_test
     async def test_close_after_blocked_send_raises(self):
@@ -350,8 +349,8 @@ class Test(TestCase):
         with self.assertRaises(OSError):
             async with \
                     connection_pool(loop), \
-                    get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-                await send(loop, connection.sock, memoryview(data_to_send), 2097152)
+                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+                await send(loop, conn.sock, memoryview(data_to_send), 2097152)
 
     @async_test
     async def test_send_cancel_propagates(self):
@@ -371,9 +370,9 @@ class Test(TestCase):
         async def client_recv():
             async with \
                     connection_pool(loop), \
-                    get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
+                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
                 sending.set()
-                await send(loop, connection.sock, memoryview(data_to_send), 2097152)
+                await send(loop, conn.sock, memoryview(data_to_send), 2097152)
 
         client_done = Event()
 
@@ -405,8 +404,8 @@ class Test(TestCase):
         chunks = []
         async with \
                 connection_pool(loop), \
-                get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-            async for chunk in recv(loop, connection.sock, bytearray(1)):
+                connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+            async for chunk in recv(loop, conn.sock, bytearray(1)):
                 chunks.append(bytes(chunk))
 
         self.assertEqual(b''.join(chunks), data_to_recv)
@@ -427,8 +426,8 @@ class Test(TestCase):
         chunks = []
         async with \
                 connection_pool(loop), \
-                get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-            async for chunk in recv(loop, connection.sock, bytearray(131072)):
+                connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+            async for chunk in recv(loop, conn.sock, bytearray(131072)):
                 chunks.append(bytes(chunk))
 
         self.assertEqual(b''.join(chunks), data_to_recv)
@@ -444,9 +443,9 @@ class Test(TestCase):
         with self.assertRaises(TypeError):
             async with \
                     connection_pool(loop), \
-                    get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
+                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
                 # pylint: disable=no-member
-                await recv(loop, connection.sock, list()).__anext__()
+                await recv(loop, conn.sock, list()).__anext__()
 
     @async_test
     async def test_recv_cancel_propagates(self):
@@ -466,8 +465,8 @@ class Test(TestCase):
         async def client_recv():
             async with \
                     connection_pool(loop), \
-                    get_connection(loop, 'localhost', '127.0.0.1', 8080, context) as connection:
-                async for _ in recv(loop, connection.sock, bytearray(1)):
+                    connection(loop, 'localhost', '127.0.0.1', 8080, context) as conn:
+                async for _ in recv(loop, conn.sock, bytearray(1)):
                     received_byte.set()
 
         client_done = Event()
