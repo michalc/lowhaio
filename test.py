@@ -37,10 +37,13 @@ def async_test(func):
     return wrapper
 
 
-async def server(loop, pre_ssl_client_handler, client_handler):
-
+def ssl_context_server():
     ssl_context = SSLContext(PROTOCOL_TLSv1_2)
     ssl_context.load_cert_chain('public.crt', keyfile='private.key')
+    return ssl_context
+
+
+async def server(loop, ssl_context, pre_ssl_client_handler, client_handler):
     server_sock = socket(family=AF_INET, type=SOCK_STREAM, proto=IPPROTO_TCP)
     server_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     server_sock.setblocking(False)
@@ -143,7 +146,7 @@ class Test(TestCase):
         loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
-        server_task = await server(loop, null_handler, null_handler)
+        server_task = await server(loop, ssl_context_server(), null_handler, null_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         async with \
@@ -162,7 +165,7 @@ class Test(TestCase):
         async def server_client(_):
             await server_wait_forever
 
-        server_task = await server(loop, null_handler, server_client)
+        server_task = await server(loop, ssl_context_server(), null_handler, server_client)
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(ConnectionError):
@@ -179,7 +182,7 @@ class Test(TestCase):
         loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
-        server_task = await server(loop, null_handler, null_handler)
+        server_task = await server(loop, ssl_context_server(), null_handler, null_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(ConnectionRefusedError):
@@ -198,7 +201,7 @@ class Test(TestCase):
         context = SSLContext(PROTOCOL_TLSv1_2)
         context_incompatible = create_default_context()
 
-        server_task = await server(loop, null_handler, null_handler)
+        server_task = await server(loop, ssl_context_server(), null_handler, null_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(SSLCertVerificationError):
@@ -215,10 +218,10 @@ class Test(TestCase):
         loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
-        async def broken_pre_ssl_handler(sock):
+        async def broken_pre_ssl(sock):
             sock.send(b'-')
 
-        server_task = await server(loop, broken_pre_ssl_handler, null_handler)
+        server_task = await server(loop, ssl_context_server(), broken_pre_ssl, null_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(SSLError):
@@ -237,7 +240,7 @@ class Test(TestCase):
             ssl_sock.close()
             closed.set()
 
-        server_task = await server(loop, null_handler, early_close)
+        server_task = await server(loop, ssl_context_server(), null_handler, early_close)
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(OSError):
@@ -267,7 +270,7 @@ class Test(TestCase):
                     break
             done.set()
 
-        server_task = await server(loop, null_handler, recv_handler)
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         async with \
@@ -298,7 +301,7 @@ class Test(TestCase):
                     break
             done.set()
 
-        server_task = await server(loop, null_handler, recv_handler)
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         async with \
@@ -321,7 +324,7 @@ class Test(TestCase):
             sock.close()
             done.set()
 
-        server_task = await server(loop, null_handler, recv_handler)
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(BrokenPipeError):
@@ -343,7 +346,7 @@ class Test(TestCase):
             async for _ in recv(loop, sock, memoryview(bytearray(1024))):
                 break
 
-        server_task = await server(loop, null_handler, recv_handler)
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(OSError):
@@ -364,7 +367,7 @@ class Test(TestCase):
         async def recv_handler(_):
             await server_forever.wait()
 
-        server_task = await server(loop, null_handler, recv_handler)
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         async def client_recv():
@@ -398,7 +401,7 @@ class Test(TestCase):
         async def recv_handler(sock):
             await send(loop, sock, data_to_recv, 1024)
 
-        server_task = await server(loop, null_handler, recv_handler)
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         chunks = []
@@ -420,7 +423,7 @@ class Test(TestCase):
         async def recv_handler(sock):
             await send(loop, sock, data_to_recv, 1024)
 
-        server_task = await server(loop, null_handler, recv_handler)
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         chunks = []
@@ -437,7 +440,7 @@ class Test(TestCase):
         loop = get_event_loop()
         context = SSLContext(PROTOCOL_TLSv1_2)
 
-        server_task = await server(loop, null_handler, null_handler)
+        server_task = await server(loop, ssl_context_server(), null_handler, null_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         with self.assertRaises(TypeError):
@@ -459,7 +462,7 @@ class Test(TestCase):
             await send(loop, sock, b'-', 1024)
             await server_forever.wait()
 
-        server_task = await server(loop, null_handler, server_recv_handler)
+        server_task = await server(loop, ssl_context_server(), null_handler, server_recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         async def client_recv():
