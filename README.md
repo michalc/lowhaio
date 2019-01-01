@@ -41,21 +41,24 @@ host = b'www.example.com'
 port = 443
 ip_address = await loop.getaddrinfo(host, port)
 async with \
-        lowhaio.connection_pool(max=20, max_wait_connection_seconds=20, max_requests_per_connection=20, max_idle_seconds=5, max_wait_send_recv_seconds=10, chunk_bytes=4096) as pool, \
-        pool.connection(ip_address, port, ssl_context) as connection:
+        connection_pool(
+            loop=loop, max=20, max_wait_connection_seconds=20, max_requests_per_connection=20,
+            max_idle_seconds=5, max_wait_send_recv_seconds=10) as pool, \
+        connection(loop, pool, ip_address, port, ssl_context) as conn:
 
-    await pool.send(connection,
+    await send(loop, conn,
         b'POST /path HTTP/1.1\r\n'
         b'Host: www.w3.org\r\n'
         b'\r\n'
-        b'Body'
+        b'Body',
+        4096,
     )
 
-    code, cursor = await pool.recv_status_line(connection):
-    async for header_key, header_value, cursor in pool.recv_headers(connection, cursor):
+    code = await recv_code(loop, conn):
+    async for header_key, header_value in recv_headers(loop, conn):
         # Do something with the header values
 
-    async for body_bytes in pool.recv_body(connection, cursor):
+    async for body_bytes in pool.recv_body(loop, conn):
         # Save the body bytes
 ```
 
@@ -108,6 +111,6 @@ class NonSSLSocket(socket):
         self.__class__ = socket
         return self
 
-async with lowhaio.socket(pool, host, port, NonSSLContext(),...):
+async with connection(loop, pool, host, port, NonSSLContext(),...):
     ...
 ```
