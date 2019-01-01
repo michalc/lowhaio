@@ -73,10 +73,6 @@ async def server(loop, pre_ssl_client_handler, client_handler):
             pass
 
     def create_client_task(sock):
-        # Client task is created immediately after socket is connected, in a
-        # sync function and without a yield, so cleanup always happens, even
-        # if the server task is immediately cancelled
-
         task = loop.create_task(client_task(sock))
         client_tasks.add(task)
 
@@ -116,6 +112,7 @@ async def sock_accept(loop, server_sock, on_listening, create_client_task):
             pass
         else:
             sock.setblocking(False)
+            # No yield between socket accepted and creating task so always cleaned up
             create_client_task(sock)
             if not done.cancelled():
                 done.set_result(None)
