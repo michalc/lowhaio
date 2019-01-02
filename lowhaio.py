@@ -194,7 +194,7 @@ async def recv(loop, conn):
     while num_bytes:
         num_bytes = await recv_at_least_one_byte(loop, conn.sock,
                                                  conn.buf_memoryview, len(conn.buf_memoryview))
-        yield bytearray(conn.buf_memoryview[:num_bytes])
+        yield conn.buf_memoryview[:num_bytes]
 
 
 async def send_at_least_one_byte(loop, sock, buf, chunk_bytes):
