@@ -192,8 +192,7 @@ async def send(loop, conn, buf_memoryview, chunk_bytes):
 async def recv(loop, conn):
     num_bytes = 1
     while num_bytes:
-        num_bytes = await recv_at_least_one_byte(loop, conn.sock,
-                                                 conn.buf_memoryview, len(conn.buf_memoryview))
+        num_bytes = await recv_at_least_one_byte(loop, conn.sock, conn.buf_memoryview)
         yield conn.buf_memoryview[:num_bytes]
 
 
@@ -226,9 +225,9 @@ async def send_at_least_one_byte(loop, sock, buf, chunk_bytes):
         raise
 
 
-async def recv_at_least_one_byte(loop, sock, buf_memoryview, chunk_bytes):
+async def recv_at_least_one_byte(loop, sock, buf_memoryview):
     fileno = sock.fileno()
-    max_bytes = min(chunk_bytes, len(buf_memoryview))
+    max_bytes = len(buf_memoryview)
     done = Future()
 
     def read():
