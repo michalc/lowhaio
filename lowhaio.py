@@ -17,11 +17,12 @@ class ConnectionPool:
 
 
 class Connection:
-    __slots__ = ('sock', 'buf_memoryview')
+    __slots__ = ('sock', 'buf', 'buf_memoryview')
 
-    def __init__(self, sock, buf_memoryview):
+    def __init__(self, sock, buf):
         self.sock = sock
-        self.buf_memoryview = buf_memoryview
+        self.buf = buf
+        self.buf_memoryview = memoryview(buf)
 
 
 class AsyncContextManager:
