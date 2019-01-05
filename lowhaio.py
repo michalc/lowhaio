@@ -182,11 +182,10 @@ async def ssl_unwrap_socket(loop, ssl_sock):
         raise
 
 
-async def send(loop, conn, buf_memoryview, chunk_bytes):
+async def send(loop, conn, buf_memoryview):
     cursor = 0
     while cursor != len(buf_memoryview):
-        num_bytes = await send_at_least_one_byte(loop, conn.sock,
-                                                 buf_memoryview[cursor:], chunk_bytes)
+        num_bytes = await send_at_least_one_byte(loop, conn.sock, buf_memoryview[cursor:])
         cursor += num_bytes
 
 
@@ -197,14 +196,13 @@ async def recv(loop, conn):
         yield conn.buf_memoryview[:num_bytes]
 
 
-async def send_at_least_one_byte(loop, sock, buf, chunk_bytes):
+async def send_at_least_one_byte(loop, sock, buf):
     fileno = sock.fileno()
-    max_bytes = min(chunk_bytes, len(buf))
     done = Future()
 
     def write():
         try:
-            num_bytes = sock.send(buf[:max_bytes])
+            num_bytes = sock.send(buf)
         except (SSLWantWriteError, BlockingIOError):
             pass
         except BaseException as exception:
@@ -228,12 +226,11 @@ async def send_at_least_one_byte(loop, sock, buf, chunk_bytes):
 
 async def recv_at_least_one_byte(loop, sock, buf_memoryview):
     fileno = sock.fileno()
-    max_bytes = len(buf_memoryview)
     done = Future()
 
     def read():
         try:
-            num_bytes = sock.recv_into(buf_memoryview, max_bytes)
+            num_bytes = sock.recv_into(buf_memoryview)
         except (SSLWantReadError, BlockingIOError):
             pass
         except BaseException as exception:

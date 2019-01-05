@@ -268,8 +268,8 @@ class Test(TestCase):
         context = ssl_context_client()
 
         done = Event()
-        buf = bytearray()
-        data_to_send = b'abcd' * 100
+        buf = bytearray(2)
+        data_to_send = b'ab'
         chunks_received = []
         bytes_received = 0
 
@@ -288,7 +288,7 @@ class Test(TestCase):
         async with \
                 connection_pool(loop), \
                 connection(loop, 'localhost', '127.0.0.1', 8080, context, buf) as conn:
-            await send(loop, conn, memoryview(data_to_send), 1)
+            await send(loop, conn, memoryview(data_to_send))
             await done.wait()
 
         self.assertEqual(b''.join(chunks_received), data_to_send)
@@ -299,7 +299,7 @@ class Test(TestCase):
         context = ssl_context_client()
 
         done = Event()
-        buf = bytearray()
+        buf = bytearray(1)
         # Large amount of data is required to cause SSLWantWriteError
         data_to_send = b'abcd' * 2097152
         chunks_received = []
@@ -320,7 +320,7 @@ class Test(TestCase):
         async with \
                 connection_pool(loop), \
                 connection(loop, 'localhost', '127.0.0.1', 8080, context, buf) as conn:
-            await send(loop, conn, memoryview(data_to_send), 2097152)
+            await send(loop, conn, memoryview(data_to_send))
             await done.wait()
 
         self.assertEqual(b''.join(chunks_received), data_to_send)
@@ -346,7 +346,7 @@ class Test(TestCase):
                     connection_pool(loop), \
                     connection(loop, 'localhost', '127.0.0.1', 8080, context, buf) as conn:
                 await done.wait()
-                await send(loop, conn, memoryview(bytearray(b'-')), 1)
+                await send(loop, conn, memoryview(bytearray(b'-')))
 
     @async_test
     async def test_close_after_blocked_send_raises(self):
@@ -368,7 +368,7 @@ class Test(TestCase):
             async with \
                     connection_pool(loop), \
                     connection(loop, 'localhost', '127.0.0.1', 8080, context, buf) as conn:
-                await send(loop, conn, memoryview(data_to_send), 2097152)
+                await send(loop, conn, memoryview(data_to_send))
 
     @async_test
     async def test_send_cancel_propagates(self):
@@ -392,7 +392,7 @@ class Test(TestCase):
                     connection(loop, 'localhost', '127.0.0.1', 8080,
                                context, buf) as conn:
                 sending.set()
-                await send(loop, conn, memoryview(data_to_send), 2097152)
+                await send(loop, conn, memoryview(data_to_send))
 
         client_done = Event()
 
@@ -416,7 +416,7 @@ class Test(TestCase):
         data_to_recv = b'abcd' * 100
 
         async def recv_handler(conn):
-            await send(loop, conn, data_to_recv, 1024)
+            await send(loop, conn, data_to_recv)
 
         server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
@@ -439,7 +439,7 @@ class Test(TestCase):
         data_to_recv = b'abcd' * 65536
 
         async def recv_handler(sock):
-            await send(loop, sock, data_to_recv, 1024)
+            await send(loop, sock, data_to_recv)
 
         server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
@@ -477,7 +477,7 @@ class Test(TestCase):
         received_byte = Event()
 
         async def server_recv_handler(conn):
-            await send(loop, conn, b'-', 1024)
+            await send(loop, conn, b'-')
             await server_forever.wait()
 
         server_task = await server(loop, ssl_context_server(), null_handler, server_recv_handler)
@@ -549,7 +549,7 @@ class Test(TestCase):
         async with \
                 connection_pool(loop), \
                 connection(loop, 'localhost', '127.0.0.1', 8080, context, buf) as conn:
-            await send(loop, conn, memoryview(data_to_send), 1)
+            await send(loop, conn, memoryview(data_to_send))
             await done.wait()
 
         self.assertEqual(b''.join(chunks_received), data_to_send)
