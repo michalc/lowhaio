@@ -17,12 +17,14 @@ class ConnectionPool:
 
 
 class Connection:
-    __slots__ = ('sock', 'buf', 'buf_memoryview')
+    __slots__ = ('sock', 'buf', 'buf_memoryview', 'cursor_received', 'cursor_parsed')
 
     def __init__(self, sock, buf):
         self.sock = sock
         self.buf = buf
         self.buf_memoryview = memoryview(buf)
+        self.cursor_received = 0
+        self.cursor_parsed = 0
 
 
 class AsyncContextManager:
@@ -189,11 +191,69 @@ async def send(loop, conn, buf_memoryview):
         cursor += num_bytes
 
 
-async def recv(loop, conn):
-    num_bytes = 1
-    while num_bytes:
-        num_bytes = await recv_at_least_one_byte(loop, conn.sock, conn.buf_memoryview)
-        yield conn.buf_memoryview[:num_bytes]
+async def recv_code(loop, conn):
+    while True:
+        conn.cursor_received += await recv_at_least_one_byte(
+            loop, conn.sock, conn.buf_memoryview[conn.cursor_received:])
+        conn.cursor_parsed = conn.buf.find(b'\r\n', 0, conn.cursor_received)
+
+        if conn.cursor_parsed != -1:
+            break
+        elif conn.cursor_received == len(conn.buf):
+            # The first line did not fit into the buffer
+            raise ValueError()
+
+    code = int(conn.buf[9:min(12, conn.cursor_parsed)])
+    return code
+
+
+async def recv_headers(loop, conn):
+
+    while True:
+        newline_index_1 = conn.cursor_parsed
+        newline_index_2 = conn.buf.find(b'\r\n', conn.cursor_parsed + 2, conn.cursor_received)
+
+        if newline_index_2 == newline_index_1 + 2:
+            # End of headers, ready to receive body
+            conn.cursor_parsed = newline_index_2 + 2
+            return
+
+        if newline_index_2 != -1:
+            # Header
+            yield conn.buf[conn.cursor_parsed + 2:newline_index_2].split(b':')
+            conn.cursor_parsed = newline_index_2
+
+        elif conn.cursor_received == len(conn.buf):
+            # Headers don't fit in buffer
+            raise ValueError()
+
+        else:
+            # No header yet
+            num_received = await recv_at_least_one_byte(
+                loop, conn.sock, conn.buf_memoryview[conn.cursor_received:])
+            conn.cursor_received += num_received
+
+            if not num_received:
+                raise ValueError()
+
+
+async def recv_body(loop, conn):
+
+    while True:
+        # If fetching the header resulted in _exactly_ the http header bytes
+        # received and no more, we shouldn't yield an empty array, since this
+        # is often taken as EOF
+        if conn.cursor_parsed != conn.cursor_received:
+            yield conn.buf_memoryview[conn.cursor_parsed:conn.cursor_received]
+
+        conn.cursor_parsed = conn.cursor_received
+
+        num_bytes = await recv_at_least_one_byte(loop, conn.sock,
+                                                 conn.buf_memoryview[conn.cursor_received:])
+        if not num_bytes:
+            break
+
+        conn.cursor_received += num_bytes
 
 
 async def send_at_least_one_byte(loop, sock, buf):

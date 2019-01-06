@@ -22,7 +22,10 @@ from ssl import (
 from lowhaio import (
     connection,
     connection_pool,
-    recv,
+    recv_at_least_one_byte,
+    recv_body,
+    recv_code,
+    recv_headers,
     send,
     ssl_handshake,
     ssl_unwrap_socket,
@@ -139,6 +142,13 @@ async def sock_accept(loop, server_sock, on_listening, create_client_task):
 
 async def null_handler(_):
     pass
+
+
+async def recv(loop, conn):
+    num_bytes = 1
+    while num_bytes:
+        num_bytes = await recv_at_least_one_byte(loop, conn.sock, conn.buf_memoryview)
+        yield conn.buf_memoryview[:num_bytes]
 
 
 class Test(TestCase):
@@ -409,11 +419,99 @@ class Test(TestCase):
         self.assertEqual(client_task.cancelled(), True)
 
     @async_test
-    async def test_recv_small(self):
+    async def test_recv_small_status_line_too_big(self):
         loop = get_event_loop()
         context = ssl_context_client()
 
-        data_to_recv = b'abcd' * 100
+        data_to_recv = \
+            b'HTTP/1.1 200 ' + b'OK' * 1024 + b'\r\n' + \
+            b'\r\n'
+
+        async def recv_handler(conn):
+            await send(loop, conn, data_to_recv)
+
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        with self.assertRaises(ValueError):
+            async with \
+                    connection_pool(loop), \
+                    connection(loop, 'localhost', '127.0.0.1', 8080,
+                               context, bytearray(1024)) as conn:
+
+                await recv_code(loop, conn)
+
+    @async_test
+    async def test_recv_large_status_line_too_big(self):
+        loop = get_event_loop()
+        context = ssl_context_client()
+
+        data_to_recv = \
+            b'HTTP/1.1 200 ' + b'OK' * 1024 + b'\r\n' + \
+            b'\r\n'
+
+        async def recv_handler(conn):
+            for byte_to_send in data_to_recv:
+                await send(loop, conn, bytearray([byte_to_send]))
+
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        with self.assertRaises(ValueError):
+            async with \
+                    connection_pool(loop), \
+                    connection(loop, 'localhost', '127.0.0.1', 8080,
+                               context, bytearray(1024)) as conn:
+
+                await recv_code(loop, conn)
+
+    @async_test
+    async def test_recv_small_no_headers(self):
+        loop = get_event_loop()
+        context = ssl_context_client()
+
+        body_to_recv = b'abcd' * 100
+        data_to_recv = \
+            b'HTTP/1.1 200 OK\r\n' + \
+            b'\r\n' + \
+            body_to_recv
+
+        async def recv_handler(conn):
+            for byte_to_send in data_to_recv:
+                await send(loop, conn, bytearray([byte_to_send]))
+
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        chunks = []
+        no_headers = False
+        async with \
+                connection_pool(loop), \
+                connection(loop, 'localhost', '127.0.0.1', 8080, context, bytearray(1024)) as conn:
+
+            code = await recv_code(loop, conn)
+            try:
+                # pylint: disable=no-member
+                await recv_headers(loop, conn).__anext__()
+            except StopAsyncIteration:
+                no_headers = True
+            async for chunk in recv_body(loop, conn):
+                chunks.append(bytes(chunk))
+
+        self.assertEqual(code, 200)
+        self.assertEqual(no_headers, True)
+        self.assertEqual(b''.join(chunks), body_to_recv)
+
+    @async_test
+    async def test_recv_large_no_headers(self):
+        loop = get_event_loop()
+        context = ssl_context_client()
+
+        body_to_recv = b'abcd' * 100
+        data_to_recv = \
+            b'HTTP/1.1 200 OK\r\n' + \
+            b'\r\n' + \
+            body_to_recv
 
         async def recv_handler(conn):
             await send(loop, conn, data_to_recv)
@@ -422,36 +520,256 @@ class Test(TestCase):
         self.add_async_cleanup(loop, cancel, server_task)
 
         chunks = []
+        no_headers = False
         async with \
                 connection_pool(loop), \
-                connection(loop, 'localhost', '127.0.0.1', 8080, context, bytearray(1)) as conn:
-            async for chunk in recv(loop, conn):
+                connection(loop, 'localhost', '127.0.0.1', 8080, context, bytearray(1024)) as conn:
+
+            code = await recv_code(loop, conn)
+            try:
+                # pylint: disable=no-member
+                await recv_headers(loop, conn).__anext__()
+            except StopAsyncIteration:
+                no_headers = True
+            async for chunk in recv_body(loop, conn):
                 chunks.append(bytes(chunk))
 
-        self.assertEqual(b''.join(chunks), data_to_recv)
+        self.assertEqual(code, 200)
+        self.assertEqual(no_headers, True)
+        self.assertEqual(b''.join(chunks), body_to_recv)
 
     @async_test
-    async def test_recv_large(self):
+    async def test_recv_small_with_header(self):
         loop = get_event_loop()
         context = ssl_context_client()
 
-        buf = bytearray(131072)
-        data_to_recv = b'abcd' * 65536
+        body_to_recv = b'abcd' * 100
+        data_to_recv = \
+            b'HTTP/1.1 200 OK\r\n' + \
+            b'My:header\r\n' + \
+            b'\r\n' + \
+            body_to_recv
 
-        async def recv_handler(sock):
-            await send(loop, sock, data_to_recv)
+        async def recv_handler(conn):
+            for byte_to_send in data_to_recv:
+                await send(loop, conn, bytearray([byte_to_send]))
 
         server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
         chunks = []
+        headers = []
         async with \
                 connection_pool(loop), \
-                connection(loop, 'localhost', '127.0.0.1', 8080, context, buf) as conn:
-            async for chunk in recv(loop, conn):
+                connection(loop, 'localhost', '127.0.0.1', 8080, context, bytearray(1024)) as conn:
+
+            code = await recv_code(loop, conn)
+            async for header_key, header_value in recv_headers(loop, conn):
+                headers.append((header_key, header_value))
+            async for chunk in recv_body(loop, conn):
                 chunks.append(bytes(chunk))
 
-        self.assertEqual(b''.join(chunks), data_to_recv)
+        self.assertEqual(code, 200)
+        self.assertEqual(headers, [(b'My', b'header')])
+        self.assertEqual(b''.join(chunks), body_to_recv)
+
+    @async_test
+    async def test_recv_large_with_header(self):
+        loop = get_event_loop()
+        context = ssl_context_client()
+
+        body_to_recv = b'abcd' * 100
+        data_to_recv = \
+            b'HTTP/1.1 200 OK\r\n' + \
+            b'My:header\r\n' + \
+            b'\r\n' + \
+            body_to_recv
+
+        async def recv_handler(conn):
+            await send(loop, conn, data_to_recv)
+
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        chunks = []
+        headers = []
+        async with \
+                connection_pool(loop), \
+                connection(loop, 'localhost', '127.0.0.1', 8080, context, bytearray(1024)) as conn:
+
+            code = await recv_code(loop, conn)
+            async for header_key, header_value in recv_headers(loop, conn):
+                headers.append((header_key, header_value))
+            async for chunk in recv_body(loop, conn):
+                chunks.append(bytes(chunk))
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers, [(b'My', b'header')])
+        self.assertEqual(b''.join(chunks), body_to_recv)
+
+    @async_test
+    async def test_recv_small_with_headers(self):
+        loop = get_event_loop()
+        context = ssl_context_client()
+
+        body_to_recv = b'abcd' * 100
+        data_to_recv = \
+            b'HTTP/1.1 200 OK\r\n' + \
+            b'My:header\r\n' + \
+            b'Another:header\r\n' + \
+            b'\r\n' + \
+            body_to_recv
+
+        async def recv_handler(conn):
+            for byte_to_send in data_to_recv:
+                await send(loop, conn, bytearray([byte_to_send]))
+
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        chunks = []
+        headers = []
+        async with \
+                connection_pool(loop), \
+                connection(loop, 'localhost', '127.0.0.1', 8080, context, bytearray(1024)) as conn:
+
+            code = await recv_code(loop, conn)
+            async for header_key, header_value in recv_headers(loop, conn):
+                headers.append((header_key, header_value))
+            async for chunk in recv_body(loop, conn):
+                chunks.append(bytes(chunk))
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers, [(b'My', b'header'), (b'Another', b'header')])
+        self.assertEqual(b''.join(chunks), body_to_recv)
+
+    @async_test
+    async def test_recv_large_with_headers(self):
+        loop = get_event_loop()
+        context = ssl_context_client()
+
+        body_to_recv = b'abcd' * 100
+        data_to_recv = \
+            b'HTTP/1.1 200 OK\r\n' + \
+            b'My:header\r\n' + \
+            b'Another:header\r\n' + \
+            b'\r\n' + \
+            body_to_recv
+
+        async def recv_handler(conn):
+            await send(loop, conn, data_to_recv)
+
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        chunks = []
+        headers = []
+        async with \
+                connection_pool(loop), \
+                connection(loop, 'localhost', '127.0.0.1', 8080, context, bytearray(1024)) as conn:
+
+            code = await recv_code(loop, conn)
+            async for header_key, header_value in recv_headers(loop, conn):
+                headers.append((header_key, header_value))
+            async for chunk in recv_body(loop, conn):
+                chunks.append(bytes(chunk))
+
+        self.assertEqual(code, 200)
+        self.assertEqual(headers, [(b'My', b'header'), (b'Another', b'header')])
+        self.assertEqual(b''.join(chunks), body_to_recv)
+
+    @async_test
+    async def test_recv_small_header_too_big(self):
+        loop = get_event_loop()
+        context = ssl_context_client()
+
+        body_to_recv = b'abcd' * 100
+        data_to_recv = \
+            b'HTTP/1.1 200 OK\r\n' + \
+            b'My:header\r\n' + \
+            b'a' * 1024 + b'\r\n' + \
+            b'\r\n' + \
+            body_to_recv
+
+        async def recv_handler(conn):
+            for byte_to_send in data_to_recv:
+                await send(loop, conn, bytearray([byte_to_send]))
+
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        headers = []
+        with self.assertRaises(ValueError):
+            async with \
+                    connection_pool(loop), \
+                    connection(loop, 'localhost', '127.0.0.1', 8080,
+                               context, bytearray(1024)) as conn:
+
+                code = await recv_code(loop, conn)
+                async for header_key, header_value in recv_headers(loop, conn):
+                    headers.append((header_key, header_value))
+
+        self.assertEqual(code, 200)
+
+    @async_test
+    async def test_recv_large_header_too_big(self):
+        loop = get_event_loop()
+        context = ssl_context_client()
+
+        body_to_recv = b'abcd' * 100
+        data_to_recv = \
+            b'HTTP/1.1 200 OK\r\n' + \
+            b'My:header\r\n' + \
+            b'a' * 1024 + b'\r\n' + \
+            body_to_recv
+
+        async def recv_handler(conn):
+            await send(loop, conn, data_to_recv)
+
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        headers = []
+        with self.assertRaises(ValueError):
+            async with \
+                    connection_pool(loop), \
+                    connection(loop, 'localhost', '127.0.0.1', 8080,
+                               context, bytearray(1024)) as conn:
+
+                code = await recv_code(loop, conn)
+                async for header_key, header_value in recv_headers(loop, conn):
+                    headers.append((header_key, header_value))
+
+        self.assertEqual(code, 200)
+
+    @async_test
+    async def test_recv_unfinished_header_raises(self):
+        loop = get_event_loop()
+        context = ssl_context_client()
+
+        data_to_recv = \
+            b'HTTP/1.1 200 OK\r\n' + \
+            b'Some:header\r\n' + \
+            b'My:header\r'
+
+        async def recv_handler(conn):
+            await send(loop, conn, data_to_recv)
+
+        server_task = await server(loop, ssl_context_server(), null_handler, recv_handler)
+        self.add_async_cleanup(loop, cancel, server_task)
+
+        headers = []
+        with self.assertRaises(ValueError):
+            async with \
+                    connection_pool(loop), \
+                    connection(loop, 'localhost', '127.0.0.1', 8080,
+                               context, bytearray(1024)) as conn:
+
+                code = await recv_code(loop, conn)
+                async for header_key, header_value in recv_headers(loop, conn):
+                    headers.append((header_key, header_value))
+
+        self.assertEqual(code, 200)
 
     @async_test
     async def test_bad_array_raises(self):
@@ -472,22 +790,34 @@ class Test(TestCase):
         loop = get_event_loop()
         context = ssl_context_client()
 
-        buf = bytearray(1)
+        body_to_recv = b'abcd' * 100
+        data_to_recv = \
+            b'HTTP/1.1 200 OK\r\n' + \
+            b'Some:header\r\n' + \
+            b'\r\n' + \
+            body_to_recv
+
+        buf = bytearray(1024)
         server_forever = Event()
         received_byte = Event()
 
         async def server_recv_handler(conn):
-            await send(loop, conn, b'-')
+            await send(loop, conn, data_to_recv)
             await server_forever.wait()
 
         server_task = await server(loop, ssl_context_server(), null_handler, server_recv_handler)
         self.add_async_cleanup(loop, cancel, server_task)
 
+        headers = []
+
         async def client_recv():
             async with \
                     connection_pool(loop), \
                     connection(loop, 'localhost', '127.0.0.1', 8080, context, buf) as conn:
-                async for _ in recv(loop, conn):
+                _ = await recv_code(loop, conn)
+                async for header_key, header_value in recv_headers(loop, conn):
+                    headers.append((header_key, header_value))
+                async for _ in recv_body(loop, conn):
                     received_byte.set()
 
         client_done = Event()
@@ -502,6 +832,7 @@ class Test(TestCase):
         server_task.cancel()
         await client_done.wait()
 
+        self.assertEqual(headers, [(b'Some', b'header')])
         self.assertEqual(client_task.cancelled(), True)
 
     @async_test
