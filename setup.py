@@ -11,7 +11,7 @@ setuptools.setup(
     version='0.0.4',
     author='Michal Charemza',
     author_email='michal@charemza.name',
-    description='Lightweight and dependency-free Python asyncio HTTP/1.1 client. ',
+    description='Lightweight Python asyncio HTTP/1.1 client. ',
     long_description=long_description(),
     long_description_content_type='text/markdown',
     url='https://github.com/michalc/lowhaio',
