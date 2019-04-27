@@ -8,12 +8,12 @@ from aiodnsresolver import (
 )
 
 
-def Pool():
+def Pool(resolver=Resolver):
 
     loop = \
         asyncio.get_running_loop() if hasattr(asyncio, 'get_running_loop') else \
         asyncio.get_event_loop()
-    resolve, _ = Resolver()
+    resolve, _ = resolver()
 
     async def request(method, url, headers, body):
         parsed_url = urllib.parse.urlsplit(url)
