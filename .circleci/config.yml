@@ -22,5 +22,5 @@ jobs:
             ./cc-test-reporter before-build
             ./create_certs.sh
             coverage run -m setup test -v
-            coverage xml
+            coverage xml -i
             ./cc-test-reporter after-build --exit-code $?

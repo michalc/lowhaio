@@ -10,3 +10,5 @@ checks:
     enabled: false
   method-count:
     enabled: false
+  return-statements:
+    enabled: false

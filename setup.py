@@ -23,6 +23,9 @@ setuptools.setup(
         'aiodnsresolver==0.0.116',
     ],
     test_suite='test',
+    tests_require=[
+        'aiohttp~=3.5.4',
+    ],
     classifiers=[
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: MIT License',

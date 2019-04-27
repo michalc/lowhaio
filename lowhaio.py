@@ -18,7 +18,7 @@ def Pool(resolver=Resolver):
 
     async def request(method, url, headers, body):
         parsed_url = urllib.parse.urlsplit(url)
-        host, _, port_specified = parsed_url.hostname.partition(':')
+        host, _, port_specified = parsed_url.netloc.partition(':')
 
         async def get_ip_address():
             try:
@@ -46,10 +46,11 @@ def Pool(resolver=Resolver):
                     for (key, value) in headers
                 ) + \
                 b'\r\n'
-            await loop.sock_sendall(sock, outgoing_header)
+            await sendall(sock, outgoing_header)
 
             async for chunk in body:
-                await loop.sock_sendall(sock, chunk)
+                if chunk:
+                    await sendall(sock, chunk)
 
             unprocessed = b''
             while True:
@@ -96,6 +97,46 @@ def Pool(resolver=Resolver):
                 sock.close()
 
         return code, response_headers, response_body()
+
+    async def sendall(sock, data):
+        try:
+            latest_num_bytes = sock.send(data)
+        except BlockingIOError:
+            latest_num_bytes = 0
+        else:
+            if latest_num_bytes == 0:
+                raise IOError()
+
+        if latest_num_bytes == len(data):
+            return
+
+        total_num_bytes = latest_num_bytes
+
+        def writer():
+            nonlocal total_num_bytes
+            try:
+                latest_num_bytes = sock.send(data_memoryview[total_num_bytes:])
+            except BlockingIOError:
+                pass
+            except BaseException as exception:
+                if not result.cancelled():
+                    result.set_exception(exception)
+            else:
+                total_num_bytes += latest_num_bytes
+                if latest_num_bytes == 0:
+                    result.set_exception(IOError())
+                elif total_num_bytes == len(data):
+                    result.set_result(None)
+
+        result = asyncio.Future()
+        fileno = sock.fileno()
+        loop.add_writer(fileno, writer)
+        data_memoryview = memoryview(data)
+
+        try:
+            return await result
+        finally:
+            loop.remove_writer(fileno)
 
     async def close():
         pass

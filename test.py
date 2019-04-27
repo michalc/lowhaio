@@ -3,6 +3,8 @@ import hashlib
 import json
 import unittest
 
+from aiohttp import web
+
 from lowhaio import (
     Pool,
 )
@@ -14,6 +16,49 @@ def async_test(func):
         loop = asyncio.get_event_loop()
         loop.run_until_complete(future)
     return wrapper
+
+
+class TestIntegration(unittest.TestCase):
+
+    def add_async_cleanup(self, coroutine, *args):
+        loop = asyncio.get_event_loop()
+        self.addCleanup(loop.run_until_complete, coroutine(*args))
+
+    @async_test
+    async def test_post(self):
+        posted_data_received = b''
+
+        async def handle_get(request):
+            nonlocal posted_data_received
+            posted_data_received = await request.content.read()
+            return web.Response(status=200)
+
+        app = web.Application()
+        app.add_routes([
+            web.post('/page', handle_get)
+        ])
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.add_async_cleanup(runner.cleanup)
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+
+        async def data():
+            for _ in range(10):
+                yield b'-' * 1000000
+
+        content_length = str(1000000 * 10).encode()
+
+        request, close = Pool()
+        self.add_async_cleanup(close)
+        _, _, body = await request(
+            b'POST', 'http://localhost:8080/page', (
+                (b'content-length', content_length),
+            ), data(),
+        )
+        async for _ in body:
+            pass
+        self.assertEqual(posted_data_received, b'-' * 1000000 * 10)
 
 
 class TestEndToEnd(unittest.TestCase):
