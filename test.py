@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import unittest
 
@@ -47,7 +48,7 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(response_dict['form'], {'some-data': 'something'})
 
     @async_test
-    async def test_get_small(self):
+    async def test_get_small_via_dns(self):
         request, _ = Pool()
 
         async def data():
@@ -61,3 +62,19 @@ class TestEndToEnd(unittest.TestCase):
             total_in += len(chunk)
 
         self.assertEqual(total_in, 104857600)
+
+    @async_test
+    async def test_get_small_via_ip_address(self):
+        request, _ = Pool()
+
+        async def data():
+            yield b''
+
+        _, _, body = await request(
+            b'GET', 'http://212.183.159.230/5MB.zip', (), data(),
+        )
+        m = hashlib.md5()
+        async for chunk in body:
+            m.update(chunk)
+
+        self.assertEqual(m.hexdigest(), 'b3215c06647bc550406a9c8ccc378756')

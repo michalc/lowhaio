@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import urllib.parse
 import socket
 
@@ -17,7 +18,14 @@ def Pool(resolver=Resolver):
 
     async def request(method, url, headers, body):
         parsed_url = urllib.parse.urlsplit(url)
-        ip_address = str((await resolve(parsed_url.hostname, TYPES.A))[0])
+
+        async def get_ip_address():
+            try:
+                return str(ipaddress.ip_address(parsed_url.hostname))
+            except ValueError:
+                return str((await resolve(parsed_url.hostname, TYPES.A))[0])
+
+        ip_address = await get_ip_address()
         sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
                              proto=socket.IPPROTO_TCP)
         sock.setblocking(False)
