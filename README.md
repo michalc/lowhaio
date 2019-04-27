@@ -7,110 +7,47 @@ Work in progress. These docs serve as a rough design spec.
 ---
 
 
-A lightweight and dependency-free Python asyncio HTTP/1.1 client. Rather than abstracting away the HTTP protocol or aspects of the connection, the provided API is a small suite of 6 utility functions that exposes low-level behaviour. This provides both flexibility and minimisation of unnecessary code and processing in the production application. Clients can of course wrap lowhaio calls in their own functions to reduce duplication or provide abstractions as they see fit.
-
-lowhaio is HTTPS-first: non-encrypted HTTP connections are possible, but require a bit more client code.
-
-
-## Responsibilities of lowhaio
-
-- Connection pooling
-- Creation of TLS/SSL connections, i.e. for HTTPS
-- Streaming of requests and responses
-- Parsing of HTTP headers, and closing connections on "Connection: close" headers.
-
-While many uses do not need requests or responses streamed, it's not possible to provide a meaningful streaming API on top of a non-streaming API, so this is deliberately provided out-of-the-box by lowhaio.
-
-
-## Responsibilities of client code
-
-- DNS resolution: this is a simple call to `loop.getaddrinfo` (or alternative such as aiodns)
-- Parsing URLs: HTTP requests are expressed in terms of protocol, hostname, port and path, and often there is no need to concatanate these together only to then require the concatanation to be parsed.
-- Conversion of strings to bytes or vice-versa: many usages do not need encoding or decoding behaviour beyond ASCII.
-- Conversion of tuples of bytes to more complex data structures, such as dictionaries.
-- Setting connection limits or timeouts: no defaults are appropriate to all situations.
-- Serializing HTTP headers: this is trivial.
-- Retrying failed connections, including those caused by [the server closing perisistant connections](https://www.w3.org/Protocols/rfc2616/rfc2616-sec8.html#sec8.1.4)
-- Calling lowhaio functions in the appropriate order. Some knowledge of the HTTP protocol is required.
+A lightweight Python asyncio HTTP/1.1 client.
 
 
 ## Usage
 
+The API is streaming-first: for both request and response bodies, asynchronous generators are used.
+
 ```python
-host = b'www.example.com'
-port = 443
-ip_address = await loop.getaddrinfo(host, port)
-async with \
-        connection_pool(
-            loop=loop, max=20, max_wait_connection_seconds=20, max_requests_per_connection=20,
-            max_idle_seconds=5, max_wait_send_recv_seconds=10) as pool, \
-        connection(loop, pool, ip_address, port, ssl_context) as conn:
+import os
+from lowhaio import Pool
 
-    await send(loop, conn,
-        b'POST /path HTTP/1.1\r\n'
-        b'Host: www.w3.org\r\n'
-        b'\r\n'
-        b'Body',
-        4096,
-    )
+request, _ = Pool()
 
-    code = await recv_code(loop, conn):
-    async for header_key, header_value in recv_headers(loop, conn):
-        # Do something with the header values
+path = 'my.file'
+content_length = str(os.stat(path).st_size).encode()
+async def file_data():
+    with open(path, 'rb') as file:
+        for chunk in iter(lambda: file.read(65536), b''):
+            yield chunk
 
-    async for body_bytes in pool.recv_body(loop, conn):
-        # Save the body bytes
+code, headers, body = await request(
+    b'POST', 'https://example.com/path', ((b'content-length': content_length),), file_data(),
+)
+async for chunk in body:
+    print(chunk)
 ```
 
-
-## Design
-
-Two main principles inform the design of lowhaio.
-
-- Overal understanding of what the final application is doing is a primary concern, and this covers _both_ lowhaio client code and lowhaio internal code. Making an elegant API is _not_ significantly prioritised over ease of overall understanding what the application is doing in terms of data transformations or bytes sent/received. For example, the API has changed during development to simpliciy/optimise the internal code.
-
-- All code in the client is required for all uses of the client: nothing is unnecessary. For example, HTTP and HTTPS require different code paths, and so HTTPS is chosen to be supported out of the box over unencrypted HTTP. HTTP is possible, but with _more_ code.
-
-
-## Testing aims
-
-- 100% code coverage.
-
-- Patching in tests done only to avoid non-determinism or slow tests, e.g. to fast-forward time when testing timeout behaviour.
-
-- No direct tests of private functions.
-
-
-## Recipies
-
-### Non-streaming requests and responses
-
-### Sending a dictionary of HTTP headers
-
-### Receiving a dictionary of HTTP headers
-
-### Chunked transfer encoding
-
-### Compressed content encoding
-
-### Non-encrypted connections
+However, there are helper functions `streamed` and `buffered` when this isn't required.
 
 ```python
-class NonSSLContext():
-    def wrap_socket(self, sock, *args, **kwargs):
-        sock.__class__ = NonSSLSocket
-        return sock
+from lowhaio import Pool, streamed, buffered
 
-class NonSSLSocket(socket):
-    __slots__ = ()
+path = 'my.file'
+content_length = str(os.stat(path).st_size).encode()
+with open(path, 'rb') as f:
+    file_data = file.read()
 
-    def do_handshake(self):
-        pass
+content_length = str(len(data)).encode()
+code, headers, body = await request(
+    b'POST', 'https://example.com/path', ((b'content-length': content_length),), streamed(file_data),
+)
 
-    def unwrap(self):
-        self.__class__ = socket
-        return self
-
-async with connection(loop, pool, host, port, NonSSLContext(),...):
-    ...
+response = await buffered(body)
 ```
