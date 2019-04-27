@@ -18,20 +18,25 @@ def Pool(resolver=Resolver):
 
     async def request(method, url, headers, body):
         parsed_url = urllib.parse.urlsplit(url)
+        host, _, port_specified = parsed_url.hostname.partition(':')
 
         async def get_ip_address():
             try:
-                return str(ipaddress.ip_address(parsed_url.hostname))
+                return str(ipaddress.ip_address(host))
             except ValueError:
-                return str((await resolve(parsed_url.hostname, TYPES.A))[0])
-
+                return str((await resolve(host, TYPES.A))[0])
         ip_address = await get_ip_address()
+
+        port = \
+            port_specified if port_specified != '' else \
+            80
+
         sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
                              proto=socket.IPPROTO_TCP)
         sock.setblocking(False)
 
         try:
-            await loop.sock_connect(sock, (ip_address, 80))
+            await loop.sock_connect(sock, (ip_address, port))
 
             outgoing_header = \
                 method + b' ' + parsed_url.path.encode() + b' HTTP/1.1\r\n' + \
