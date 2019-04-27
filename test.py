@@ -7,6 +7,8 @@ from aiohttp import web
 
 from lowhaio import (
     Pool,
+    buffered,
+    streamed,
 )
 
 
@@ -84,6 +86,28 @@ class TestEndToEnd(unittest.TestCase):
         body_bytes = b''
         async for chunk in body:
             body_bytes += chunk
+
+        headers_dict = dict(headers)
+        response_dict = json.loads(body_bytes)
+
+        self.assertEqual(code, b'200')
+        self.assertEqual(headers_dict[b'content-type'], b'application/json; charset=utf-8')
+        self.assertEqual(response_dict['headers']['host'], 'postman-echo.com')
+        self.assertEqual(response_dict['headers']['content-length'], '19')
+        self.assertEqual(response_dict['form'], {'some-data': 'something'})
+
+    @async_test
+    async def test_http_post_small_buffered_streamed(self):
+        request, close = Pool()
+        self.add_async_cleanup(close)
+
+        code, headers, body = await request(
+            b'POST', 'http://postman-echo.com/post', (
+                (b'content-length', b'19'),
+                (b'content-type', b'application/x-www-form-urlencoded'),
+            ), streamed(b'some-data=something'),
+        )
+        body_bytes = await buffered(body)
 
         headers_dict = dict(headers)
         response_dict = json.loads(body_bytes)

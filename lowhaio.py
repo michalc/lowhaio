@@ -10,6 +10,16 @@ from aiodnsresolver import (
 )
 
 
+def streamed(data):
+    async def _streamed():
+        yield data
+    return _streamed()
+
+
+async def buffered(data):
+    return b''.join([chunk async for chunk in data])
+
+
 def Pool(resolver=Resolver, ssl_context=ssl.create_default_context):
 
     loop = \

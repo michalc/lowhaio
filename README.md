@@ -47,7 +47,7 @@ async def file_data():
 
 content_length = str(len(data)).encode()
 code, headers, body = await request(
-    b'POST', 'https://example.com/path', ((b'content-length': content_length),), streamed(file_data),
+    b'POST', 'https://example.com/path', ((b'content-length': content_length),), streamed(file_data()),
 )
 
 response = await buffered(body)
