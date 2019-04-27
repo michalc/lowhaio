@@ -42,8 +42,8 @@ from lowhaio import Pool, streamed, buffered
 path = 'my.file'
 content_length = str(os.stat(path).st_size).encode()
 async def file_data():
-	with open(path, 'rb') as f:
-	    file_data = file.read()
+    with open(path, 'rb') as f:
+        file_data = file.read()
 
 content_length = str(len(data)).encode()
 code, headers, body = await request(
