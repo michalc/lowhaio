@@ -60,11 +60,11 @@ class TestEndToEnd(unittest.TestCase):
         _, _, body = await request(
             b'GET', 'http://www.ovh.net/files/1Mio.dat', (), data(),
         )
-        total_in = 0
+        m = hashlib.md5()
         async for chunk in body:
-            total_in += len(chunk)
+            m.update(chunk)
 
-        self.assertEqual(total_in, 1048576)
+        self.assertEqual(m.hexdigest(), '6cb91af4ed4c60c11613b75cd1fc6116')
 
     @async_test
     async def test_get_small_via_ip_address(self):
