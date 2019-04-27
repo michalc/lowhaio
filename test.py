@@ -18,12 +18,14 @@ def async_test(func):
 
 class TestEndToEnd(unittest.TestCase):
 
-    def add_async_cleanup(self, loop, coroutine, *args):
+    def add_async_cleanup(self, coroutine, *args):
+        loop = asyncio.get_event_loop()
         self.addCleanup(loop.run_until_complete, coroutine(*args))
 
     @async_test
     async def test_post_small(self):
-        request, _ = Pool()
+        request, close = Pool()
+        self.add_async_cleanup(close)
 
         async def data():
             yield b'some-data=something'
@@ -49,7 +51,8 @@ class TestEndToEnd(unittest.TestCase):
 
     @async_test
     async def test_get_small_via_dns(self):
-        request, _ = Pool()
+        request, close = Pool()
+        self.add_async_cleanup(close)
 
         async def data():
             yield b''
