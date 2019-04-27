@@ -39,15 +39,10 @@ However, there are helper functions `streamed` and `buffered` when this isn't re
 ```python
 from lowhaio import Pool, streamed, buffered
 
-path = 'my.file'
-content_length = str(os.stat(path).st_size).encode()
-async def file_data():
-    with open(path, 'rb') as f:
-        return file.read()
-
-content_length = str(len(data)).encode()
+content = b'some-data'
+content_length = b'9'
 code, headers, body = await request(
-    b'POST', 'https://example.com/path', ((b'content-length': content_length),), streamed(file_data()),
+    b'POST', 'https://example.com/path', ((b'content-length': content_length),), streamed(content),
 )
 
 response = await buffered(body)
