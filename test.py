@@ -25,7 +25,7 @@ class TestIntegration(unittest.TestCase):
         self.addCleanup(loop.run_until_complete, coroutine(*args))
 
     @async_test
-    async def test_post(self):
+    async def test_http_post(self):
         posted_data_received = b''
 
         async def handle_get(request):
@@ -68,7 +68,7 @@ class TestEndToEnd(unittest.TestCase):
         self.addCleanup(loop.run_until_complete, coroutine(*args))
 
     @async_test
-    async def test_post_small(self):
+    async def test_http_post_small(self):
         request, close = Pool()
         self.add_async_cleanup(close)
 
@@ -95,7 +95,34 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(response_dict['form'], {'some-data': 'something'})
 
     @async_test
-    async def test_get_small_via_dns(self):
+    async def test_https_post_small(self):
+        request, close = Pool()
+        self.add_async_cleanup(close)
+
+        async def data():
+            yield b'some-data=something'
+
+        code, headers, body = await request(
+            b'POST', 'https://postman-echo.com/post', (
+                (b'content-length', b'19'),
+                (b'content-type', b'application/x-www-form-urlencoded'),
+            ), data(),
+        )
+        body_bytes = b''
+        async for chunk in body:
+            body_bytes += chunk
+
+        headers_dict = dict(headers)
+        response_dict = json.loads(body_bytes)
+
+        self.assertEqual(code, b'200')
+        self.assertEqual(headers_dict[b'content-type'], b'application/json; charset=utf-8')
+        self.assertEqual(response_dict['headers']['host'], 'postman-echo.com')
+        self.assertEqual(response_dict['headers']['content-length'], '19')
+        self.assertEqual(response_dict['form'], {'some-data': 'something'})
+
+    @async_test
+    async def test_http_get_small_via_dns(self):
         request, close = Pool()
         self.add_async_cleanup(close)
 
@@ -112,7 +139,7 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(m.hexdigest(), '6cb91af4ed4c60c11613b75cd1fc6116')
 
     @async_test
-    async def test_get_small_via_ip_address(self):
+    async def test_http_get_small_via_ip_address(self):
         request, _ = Pool()
 
         async def data():
