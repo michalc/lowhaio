@@ -54,7 +54,7 @@ def Pool(resolver=Resolver):
 
             unprocessed = b''
             while True:
-                incoming = await loop.sock_recv(sock, 65536)
+                incoming = await recv(sock, 65536)
                 if not incoming:
                     raise Exception()
                 unprocessed += incoming
@@ -87,7 +87,7 @@ def Pool(resolver=Resolver):
 
                 while total_remaining:
                     max_chunk_length = min(65536, total_remaining)
-                    chunk = await loop.sock_recv(sock, max_chunk_length)
+                    chunk = await recv(sock, max_chunk_length)
                     total_received += len(chunk)
                     total_remaining -= len(chunk)
                     if not chunk:
@@ -123,9 +123,9 @@ def Pool(resolver=Resolver):
                     result.set_exception(exception)
             else:
                 total_num_bytes += latest_num_bytes
-                if latest_num_bytes == 0:
+                if latest_num_bytes == 0 and not result.cancelled():
                     result.set_exception(IOError())
-                elif total_num_bytes == len(data):
+                elif total_num_bytes == len(data) and not result.cancelled():
                     result.set_result(None)
 
         result = asyncio.Future()
@@ -137,6 +137,33 @@ def Pool(resolver=Resolver):
             return await result
         finally:
             loop.remove_writer(fileno)
+
+    async def recv(sock, max_chunk_length):
+        try:
+            return sock.recv(max_chunk_length)
+        except BlockingIOError:
+            pass
+
+        def reader():
+            try:
+                chunk = sock.recv(max_chunk_length)
+            except BlockingIOError:
+                pass
+            except BaseException as exception:
+                if not result.cancelled():
+                    result.set_exception(exception)
+            else:
+                if not result.cancelled():
+                    result.set_result(chunk)
+
+        result = asyncio.Future()
+        fileno = sock.fileno()
+        loop.add_reader(fileno, reader)
+
+        try:
+            return await result
+        finally:
+            loop.remove_reader(fileno)
 
     async def close():
         pass
