@@ -34,7 +34,7 @@ async for chunk in body:
     print(chunk)
 ```
 
-However, there are helper functions `streamed` and `buffered` when this isn't required.
+However, there are helper functions `streamed` and `buffered` when this isn't required or possible.
 
 ```python
 from lowhaio import Pool, streamed, buffered
@@ -43,7 +43,7 @@ path = 'my.file'
 content_length = str(os.stat(path).st_size).encode()
 async def file_data():
     with open(path, 'rb') as f:
-        file_data = file.read()
+        return file.read()
 
 content_length = str(len(data)).encode()
 code, headers, body = await request(
