@@ -183,12 +183,12 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context):
         def handshake():
             try:
                 ssl_sock.do_handshake()
-                if not done.cancelled():
+                if not done.done():
                     done.set_result(None)
             except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
                 pass
             except BaseException as exception:
-                if not done.cancelled():
+                if not done.done():
                     done.set_exception(exception)
 
         done = asyncio.Future()
