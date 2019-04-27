@@ -17,10 +17,14 @@ class ConnectionPool:
 
 
 class Connection:
-    __slots__ = ('sock', )
+    __slots__ = ('sock', 'buf', 'buf_memoryview', 'cursor_received', 'cursor_parsed')
 
-    def __init__(self, sock):
+    def __init__(self, sock, buf):
         self.sock = sock
+        self.buf = buf
+        self.buf_memoryview = memoryview(buf)
+        self.cursor_received = 0
+        self.cursor_parsed = 0
 
 
 class AsyncContextManager:
@@ -56,7 +60,7 @@ async def connection_pool(_):
 
 
 @asynccontextmanager
-async def connection(loop, hostname, ip_address, port, ssl_context):
+async def connection(loop, hostname, ip_address, port, ssl_context, buf_memoryview):
 
     async def cleanup_sock_close():
         sock.close()
@@ -87,7 +91,7 @@ async def connection(loop, hostname, ip_address, port, ssl_context):
         cleanups.append(cleanup_ssl_unwrap)
         await ssl_handshake(loop, sock)
 
-        yield Connection(sock)
+        yield Connection(sock, buf_memoryview)
     except BaseException as exception:
         exceptions.append(exception)
     finally:
@@ -180,29 +184,85 @@ async def ssl_unwrap_socket(loop, ssl_sock):
         raise
 
 
-async def send(loop, sock, buf, chunk_bytes):
+async def send(loop, conn, buf_memoryview):
     cursor = 0
-    while cursor != len(buf):
-        num_bytes = await send_at_least_one_byte(loop, sock, buf[cursor:], chunk_bytes)
+    while cursor != len(buf_memoryview):
+        num_bytes = await send_at_least_one_byte(loop, conn.sock, buf_memoryview[cursor:])
         cursor += num_bytes
 
 
-async def recv(loop, sock, buf_memoryview):
-    num_bytes = 1
-    while num_bytes:
-        num_bytes = await recv_at_least_one_byte(loop, sock, buf_memoryview,
-                                                 len(buf_memoryview))
-        yield bytearray(buf_memoryview[:num_bytes])
+async def recv_code(loop, conn):
+    while True:
+        conn.cursor_received += await recv_at_least_one_byte(
+            loop, conn.sock, conn.buf_memoryview[conn.cursor_received:])
+        conn.cursor_parsed = conn.buf.find(b'\r\n', 0, conn.cursor_received)
+
+        if conn.cursor_parsed != -1:
+            break
+        elif conn.cursor_received == len(conn.buf):
+            # The first line did not fit into the buffer
+            raise ValueError()
+
+    code = int(conn.buf[9:min(12, conn.cursor_parsed)])
+    return code
 
 
-async def send_at_least_one_byte(loop, sock, buf, chunk_bytes):
+async def recv_headers(loop, conn):
+
+    while True:
+        newline_index_1 = conn.cursor_parsed
+        newline_index_2 = conn.buf.find(b'\r\n', conn.cursor_parsed + 2, conn.cursor_received)
+
+        if newline_index_2 == newline_index_1 + 2:
+            # End of headers, ready to receive body
+            conn.cursor_parsed = newline_index_2 + 2
+            return
+
+        if newline_index_2 != -1:
+            # Header
+            yield conn.buf[conn.cursor_parsed + 2:newline_index_2].split(b':')
+            conn.cursor_parsed = newline_index_2
+
+        elif conn.cursor_received == len(conn.buf):
+            # Headers don't fit in buffer
+            raise ValueError()
+
+        else:
+            # No header yet
+            num_received = await recv_at_least_one_byte(
+                loop, conn.sock, conn.buf_memoryview[conn.cursor_received:])
+            conn.cursor_received += num_received
+
+            if not num_received:
+                raise ValueError()
+
+
+async def recv_body(loop, conn):
+
+    while True:
+        # If fetching the header resulted in _exactly_ the http header bytes
+        # received and no more, we shouldn't yield an empty array, since this
+        # is often taken as EOF
+        if conn.cursor_parsed != conn.cursor_received:
+            yield conn.buf_memoryview[conn.cursor_parsed:conn.cursor_received]
+
+        conn.cursor_parsed = conn.cursor_received
+
+        num_bytes = await recv_at_least_one_byte(loop, conn.sock,
+                                                 conn.buf_memoryview[conn.cursor_received:])
+        if not num_bytes:
+            break
+
+        conn.cursor_received += num_bytes
+
+
+async def send_at_least_one_byte(loop, sock, buf):
     fileno = sock.fileno()
-    max_bytes = min(chunk_bytes, len(buf))
     done = Future()
 
     def write():
         try:
-            num_bytes = sock.send(buf[:max_bytes])
+            num_bytes = sock.send(buf)
         except (SSLWantWriteError, BlockingIOError):
             pass
         except BaseException as exception:
@@ -224,14 +284,13 @@ async def send_at_least_one_byte(loop, sock, buf, chunk_bytes):
         raise
 
 
-async def recv_at_least_one_byte(loop, sock, buf_memoryview, chunk_bytes):
+async def recv_at_least_one_byte(loop, sock, buf_memoryview):
     fileno = sock.fileno()
-    max_bytes = min(chunk_bytes, len(buf_memoryview))
     done = Future()
 
     def read():
         try:
-            num_bytes = sock.recv_into(buf_memoryview, max_bytes)
+            num_bytes = sock.recv_into(buf_memoryview)
         except (SSLWantReadError, BlockingIOError):
             pass
         except BaseException as exception:
