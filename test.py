@@ -55,13 +55,13 @@ class TestEndToEnd(unittest.TestCase):
             yield b''
 
         _, _, body = await request(
-            b'GET', 'http://speed.hetzner.de/100MB.bin', (), data(),
+            b'GET', 'http://www.ovh.net/files/1Mio.dat', (), data(),
         )
         total_in = 0
         async for chunk in body:
             total_in += len(chunk)
 
-        self.assertEqual(total_in, 104857600)
+        self.assertEqual(total_in, 1048576)
 
     @async_test
     async def test_get_small_via_ip_address(self):
