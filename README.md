@@ -28,7 +28,7 @@ async def file_data():
             yield chunk
 
 code, headers, body = await request(
-    b'POST', 'https://example.com/path', ((b'content-length': content_length),), file_data(),
+    b'POST', 'https://example.com/path', ((b'content-length': content_length),), file_data,
 )
 async for chunk in body:
     print(chunk)
@@ -41,8 +41,9 @@ from lowhaio import Pool, streamed, buffered
 
 path = 'my.file'
 content_length = str(os.stat(path).st_size).encode()
-with open(path, 'rb') as f:
-    file_data = file.read()
+async def file_data():
+	with open(path, 'rb') as f:
+	    file_data = file.read()
 
 content_length = str(len(data)).encode()
 code, headers, body = await request(

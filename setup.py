@@ -19,6 +19,9 @@ setuptools.setup(
         'lowhaio',
     ],
     python_requires='>=3.7.0',
+    install_requires=[
+        'aiodnsresolver==0.0.116',
+    ],
     test_suite='test',
     classifiers=[
         'Programming Language :: Python :: 3',
