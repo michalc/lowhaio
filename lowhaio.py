@@ -35,7 +35,7 @@ def Pool():
                 b'\r\n'
             await loop.sock_sendall(sock, outgoing_header)
 
-            async for chunk in body()():
+            async for chunk in body:
                 await loop.sock_sendall(sock, chunk)
 
             unprocessed = b''

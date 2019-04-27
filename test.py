@@ -31,7 +31,7 @@ class TestEndToEnd(unittest.TestCase):
             b'POST', 'http://postman-echo.com/post', (
                 (b'content-length', b'19'),
                 (b'content-type', b'application/x-www-form-urlencoded'),
-            ), lambda: data,
+            ), data(),
         )
         body_bytes = b''
         async for chunk in body:
@@ -54,7 +54,7 @@ class TestEndToEnd(unittest.TestCase):
             yield b''
 
         _, _, body = await request(
-            b'GET', 'http://speed.hetzner.de/100MB.bin', (), lambda: data,
+            b'GET', 'http://speed.hetzner.de/100MB.bin', (), data(),
         )
         total_in = 0
         async for chunk in body:
