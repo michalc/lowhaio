@@ -67,11 +67,11 @@ def Pool(
 
         async def tls_connection():
             await loop.sock_connect(tcp_sock, (ip_address, port))
-            sock = ssl_context.wrap_socket(tcp_sock,
-                                           server_hostname=host,
-                                           do_handshake_on_connect=False)
-            await complete_handshake(loop, sock)
-            return sock
+            ssl_sock = ssl_context.wrap_socket(tcp_sock,
+                                               server_hostname=host,
+                                               do_handshake_on_connect=False)
+            await complete_handshake(loop, ssl_sock)
+            return ssl_sock
 
         try:
             sock = \
