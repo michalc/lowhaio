@@ -56,7 +56,6 @@ def Pool(
             sock.close()
             raise
 
-        # Receiving the rest of body is delegated to the caller
         return code, response_headers, response_body
 
     async def connection(parsed_url, host, port_specified):
