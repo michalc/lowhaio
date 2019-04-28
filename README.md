@@ -40,8 +40,10 @@ However, there are helper functions `streamed` and `buffered` when this isn't re
 ```python
 from lowhaio import Pool, streamed, buffered
 
+request, _ = Pool()
+
 content = b'some-data'
-content_length = 
+content_length = b'9'
 code, headers, body = await request(
     b'POST', 'https://example.com/path',
     params=(), headers=((b'content-length': content_length),), body=streamed(content),
