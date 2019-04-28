@@ -20,10 +20,10 @@ async def buffered(data):
     return b''.join([chunk async for chunk in data])
 
 
-def identity_or_chunked(transfer_encoding):
+def identity_or_chunked_handler(transfer_encoding):
     return {
-        b'chunked': chunked_response_body,
-        b'identity': identity_response_body,
+        b'chunked': chunked_handler,
+        b'identity': identity_handler,
     }[transfer_encoding]
 
 
@@ -31,7 +31,7 @@ def Pool(
         dns_resolver=Resolver,
         ssl_context=ssl.create_default_context,
         recv_bufsize=65536,
-        transfer_encoding_handler=identity_or_chunked,
+        transfer_encoding_handler=identity_or_chunked_handler,
 ):
 
     loop = \
@@ -137,7 +137,7 @@ def Pool(
     return request, close
 
 
-async def identity_response_body(loop, sock, recv_bufsize, response_headers_dict, unprocessed):
+async def identity_handler(loop, sock, recv_bufsize, response_headers_dict, unprocessed):
     total_received = 0
     total_remaining = int(response_headers_dict.get(b'content-length', 0))
 
@@ -157,7 +157,7 @@ async def identity_response_body(loop, sock, recv_bufsize, response_headers_dict
         yield incoming
 
 
-async def chunked_response_body(loop, sock, recv_bufsize, _, unprocessed):
+async def chunked_handler(loop, sock, recv_bufsize, _, unprocessed):
     while True:
         # Fetch until have chunk header
         while b'\r\n' not in unprocessed:
