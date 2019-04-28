@@ -231,9 +231,9 @@ async def sendall(loop, sock, data):
                 result.set_exception(exception)
         else:
             total_num_bytes += latest_num_bytes
-            if latest_num_bytes == 0 and not result.cancelled():
+            if latest_num_bytes == 0 and not result.done():
                 result.set_exception(IOError())
-            elif total_num_bytes == len(data) and not result.cancelled():
+            elif total_num_bytes == len(data) and not result.done():
                 result.set_result(None)
 
     result = asyncio.Future()
@@ -266,10 +266,10 @@ async def _recv(loop, sock, recv_bufsize):
         except (BlockingIOError, ssl.SSLWantReadError):
             pass
         except BaseException as exception:
-            if not result.cancelled():
+            if not result.done():
                 result.set_exception(exception)
         else:
-            if not result.cancelled():
+            if not result.done():
                 result.set_result(chunk)
 
     result = asyncio.Future()
