@@ -49,3 +49,18 @@ code, headers, body = await request(
 
 response = await buffered(body)
 ```
+
+
+## Scope and structures
+
+The scope of the core functions is restricted to:
+
+- (TLS) connection opening, closing and pooling;
+- passing and receiving HTTP headers and streaming bodies;
+- decoding chunked responses.
+
+This is to make the core behaviour useful to a reasonable range of uses, but to _not_ include what can be added by layer(s) on top. Specifically not included:
+
+- following redirects (although this is planned for a helper function);
+- cookies;
+- compressing/decompressing requests/responses.
