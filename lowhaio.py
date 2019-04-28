@@ -158,10 +158,8 @@ async def identity_handler(loop, sock, recv_bufsize, response_headers, unprocess
 
     while total_remaining:
         unprocessed = None  # So can be garbage collected
-        unprocessed = await recv(loop, sock, recv_bufsize)
+        unprocessed = await recv(loop, sock, min(recv_bufsize, total_remaining))
         total_remaining -= len(unprocessed)
-        if total_remaining < 0:
-            raise IOError()
         yield unprocessed
 
 
