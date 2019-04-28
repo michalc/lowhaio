@@ -1,12 +1,5 @@
 # lowhaio [![CircleCI](https://circleci.com/gh/michalc/lowhaio.svg?style=svg)](https://circleci.com/gh/michalc/lowhaio) [![Maintainability](https://api.codeclimate.com/v1/badges/418d72f1de909bff27b6/maintainability)](https://codeclimate.com/github/michalc/lowhaio/maintainability) [![Test Coverage](https://api.codeclimate.com/v1/badges/418d72f1de909bff27b6/test_coverage)](https://codeclimate.com/github/michalc/lowhaio/test_coverage)
 
----
-
-Work in progress. These docs serve as a rough design spec.
-
----
-
-
 A lightweight Python asyncio HTTP/1.1 client. No additional tasks are created; all code is in a single module; and other than the standard library only a single dependency is required, [aiodnsresolver](https://github.com/michalc/aiodnsresolver).
 
 
@@ -57,13 +50,13 @@ response = await buffered(body)
 
 The scope of the core functions is restricted to:
 
-- (TLS) connection opening, closing and pooling;
+- (TLS) connection opening, closing and pooling (pooling is planned);
 - passing and receiving HTTP headers and streaming bodies;
 - decoding chunked responses.
 
 This is to make the core behaviour useful to a reasonable range of uses, but to _not_ include what can be added by layer(s) on top. Specifically not included:
 
-- following redirects (although this is planned for a helper function);
+- following redirects (planned for a helper function);
 - cookies;
 - compressing/decompressing requests/responses;
 - authentication.
