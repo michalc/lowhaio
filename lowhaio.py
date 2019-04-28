@@ -38,7 +38,7 @@ def Pool(
         asyncio.get_running_loop() if hasattr(asyncio, 'get_running_loop') else \
         asyncio.get_event_loop()
     ssl_context = ssl_context()
-    dns_resolve, _ = dns_resolver()
+    dns_resolve, dns_resolver_clear_cache = dns_resolver()
 
     async def request(method, url, params=(), headers=(), body=streamed(b'')):
         parsed_url = urllib.parse.urlsplit(url)
@@ -129,7 +129,7 @@ def Pool(
         return code, response_headers, response_body()
 
     async def close():
-        pass
+        dns_resolver_clear_cache()
 
     return request, close
 
