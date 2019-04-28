@@ -49,26 +49,9 @@ def Pool(
             await send_header(sock, method, parsed_url, host, params, headers)
             await send_body(sock, body)
 
-            # pylint: disable=unused-variable
             code, response_headers, body_handler, unprocessed = await recv_header(sock)
-
-            async def _response_body():
-                nonlocal unprocessed
-                try:
-                    generator = body_handler(loop, sock, recv_bufsize,
-                                             response_headers, unprocessed)
-
-                    # Clear the reference to the initial unprocessed data, so it
-                    # can be garbage collected once its done with by the handler
-                    unprocessed = None
-
-                    async for chunk in generator:
-                        yield chunk
-                finally:
-                    sock.close()
-
-            response_body = _response_body()
-
+            response_body = response_body_generator(sock, body_handler,
+                                                    response_headers, unprocessed)
         except BaseException:
             sock.close()
             raise
@@ -145,6 +128,19 @@ def Pool(
         async for chunk in body:
             if chunk:
                 await sendall(loop, sock, chunk)
+
+    async def response_body_generator(sock, body_handler, response_headers, unprocessed):
+        try:
+            generator = body_handler(loop, sock, recv_bufsize, response_headers, unprocessed)
+
+            # Clear the reference to the initial unprocessed data, so it
+            # can be garbage collected once its done with by the handler
+            unprocessed = None
+
+            async for chunk in generator:
+                yield chunk
+        finally:
+            sock.close()
 
     async def close():
         dns_resolver_clear_cache()
