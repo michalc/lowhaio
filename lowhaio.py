@@ -45,17 +45,26 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
             443 if scheme == 'https' else \
             80
 
-        sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
-                             proto=socket.IPPROTO_TCP)
-        sock.setblocking(False)
+        tcp_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
+                                 proto=socket.IPPROTO_TCP)
+        tcp_sock.setblocking(False)
+
+        async def non_tls_connection():
+            await loop.sock_connect(tcp_sock, (ip_address, port))
+            return tcp_sock
+
+        async def tls_connection():
+            await loop.sock_connect(tcp_sock, (ip_address, port))
+            sock = ssl_context.wrap_socket(tcp_sock,
+                                           server_hostname=host,
+                                           do_handshake_on_connect=False)
+            await complete_handshake(sock)
+            return sock
 
         try:
-            await loop.sock_connect(sock, (ip_address, port))
-            if scheme == 'https':
-                sock = ssl_context.wrap_socket(sock,
-                                               server_hostname=host,
-                                               do_handshake_on_connect=False)
-                await complete_handshake(sock)
+            sock = \
+                await tls_connection() if scheme == 'https' else \
+                await non_tls_connection()
 
             outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
             outgoing_path = urllib.parse.quote(parsed_url.path).encode()
