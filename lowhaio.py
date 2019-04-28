@@ -108,7 +108,8 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
             sock.close()
             raise
 
-        async def identity_response_body(loop, sock, recv_bufsize, unprocessed):
+        async def identity_response_body(loop, sock, recv_bufsize,
+                                         response_headers_dict, unprocessed):
             total_received = 0
             total_remaining = int(response_headers_dict.get(b'content-length', 0))
 
@@ -130,7 +131,8 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
             finally:
                 sock.close()
 
-        async def chunked_response_body(loop, sock, recv_bufsize, unprocessed):
+        async def chunked_response_body(loop, sock, recv_bufsize,
+                                        _, unprocessed):
             try:
                 while True:
                     # Fetch until have chunk header
@@ -187,7 +189,8 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
             chunked_response_body if transfer_encoding == b'chunked' else \
             identity_response_body
 
-        return code, response_headers, response_body(loop, sock, recv_bufsize, unprocessed)
+        return code, response_headers, response_body(loop, sock, recv_bufsize,
+                                                     response_headers_dict, unprocessed)
 
     async def close():
         pass
