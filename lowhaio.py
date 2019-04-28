@@ -27,7 +27,7 @@ def identity_or_chunked_encoding(transfer_encoding):
 
 
 def Pool(
-        resolver=Resolver,
+        dns_resolver=Resolver,
         ssl_context=ssl.create_default_context,
         recv_bufsize=65536,
         body_generator=identity_or_chunked_encoding,
@@ -37,7 +37,7 @@ def Pool(
         asyncio.get_running_loop() if hasattr(asyncio, 'get_running_loop') else \
         asyncio.get_event_loop()
     ssl_context = ssl_context()
-    resolve, _ = resolver()
+    resolve, _ = dns_resolver()
 
     async def request(method, url, params=(), headers=(), body=streamed(b'')):
         parsed_url = urllib.parse.urlsplit(url)
