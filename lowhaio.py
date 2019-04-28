@@ -20,7 +20,18 @@ async def buffered(data):
     return b''.join([chunk async for chunk in data])
 
 
-def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize=65536):
+def identity_or_chunked_encoding(transfer_encoding):
+    return \
+        chunked_response_body if transfer_encoding == b'chunked' else \
+        identity_response_body
+
+
+def Pool(
+        resolver=Resolver,
+        ssl_context=ssl.create_default_context,
+        recv_bufsize=65536,
+        body_generator=identity_or_chunked_encoding,
+):
 
     loop = \
         asyncio.get_running_loop() if hasattr(asyncio, 'get_running_loop') else \
@@ -110,9 +121,7 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
 
         async def response_body():
             try:
-                gen_func = \
-                    chunked_response_body if transfer_encoding == b'chunked' else \
-                    identity_response_body
+                gen_func = body_generator(transfer_encoding)
                 generator = gen_func(loop, sock, recv_bufsize, response_headers_dict, unprocessed)
                 async for chunk in generator:
                     yield chunk
