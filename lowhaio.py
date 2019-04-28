@@ -68,24 +68,24 @@ def Pool(
             transfer_encoding = response_headers_dict.get(b'transfer-encoding', b'identity')
             body_handler = transfer_encoding_handler(transfer_encoding)
 
+            async def response_body():
+                nonlocal unprocessed
+                try:
+                    generator = body_handler(loop, sock, recv_bufsize,
+                                             response_headers_dict, unprocessed)
+
+                    # Clear the reference to the initial unprocessed data, so it
+                    # can be garbage collected once its done with by the handler
+                    unprocessed = None
+
+                    async for chunk in generator:
+                        yield chunk
+                finally:
+                    sock.close()
+
         except BaseException:
             sock.close()
             raise
-
-        async def response_body():
-            nonlocal unprocessed
-            try:
-                generator = body_handler(loop, sock, recv_bufsize,
-                                         response_headers_dict, unprocessed)
-
-                # Clear the reference to the initial unprocessed data, so it
-                # can be garbage collected once its done with by the handler
-                unprocessed = None
-
-                async for chunk in generator:
-                    yield chunk
-            finally:
-                sock.close()
 
         # Rreceiving the rest of body is delegated to the caller
         return code, response_headers, response_body()
