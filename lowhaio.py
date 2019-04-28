@@ -44,7 +44,7 @@ def Pool(
         parsed_url = urllib.parse.urlsplit(url)
         host, _, port_specified = parsed_url.netloc.partition(':')
 
-        async def connection():
+        async def connection(parsed_url, host, port_specified):
             scheme = parsed_url.scheme
             port = \
                 port_specified if port_specified != '' else \
@@ -71,7 +71,7 @@ def Pool(
             return ssl_sock
 
         try:
-            sock = await connection()
+            sock = await connection(parsed_url, host, port_specified)
 
             # Send header
             outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
