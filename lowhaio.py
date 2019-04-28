@@ -28,7 +28,7 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context):
     ssl_context = ssl_context()
     resolve, _ = resolver()
 
-    async def request(method, url, headers, body):
+    async def request(method, url, headers=(), body=streamed(b'')):
         parsed_url = urllib.parse.urlsplit(url)
         host, _, port_specified = parsed_url.netloc.partition(':')
 
