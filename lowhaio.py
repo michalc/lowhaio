@@ -174,7 +174,12 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
                         chunk_remaining -= len(in_chunk)
                         yield in_chunk
 
-                    # Remove chunk footer
+                    # Fetch until have chunk footer, and remove
+                    while len(unprocessed) < 2:
+                        incoming = await recv(sock)
+                        if not incoming:
+                            raise Exception()
+                        unprocessed += incoming
                     unprocessed = unprocessed[2:]
 
             finally:
