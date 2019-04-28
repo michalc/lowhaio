@@ -74,10 +74,12 @@ def Pool(
             return ssl_sock
 
         try:
+            # Make connection
             sock = \
                 await tls_connection() if scheme == 'https' else \
                 await non_tls_connection()
 
+            # Send header
             outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
             outgoing_path = urllib.parse.quote(parsed_url.path).encode()
             outgoing_path_qs = outgoing_path + \
@@ -92,10 +94,12 @@ def Pool(
                 b'\r\n'
             await sendall(loop, sock, outgoing_header)
 
+            # Send body
             async for chunk in body:
                 if chunk:
                     await sendall(loop, sock, chunk)
 
+            # Receive header and start of body
             unprocessed = b''
             while True:
                 unprocessed += await recv(loop, sock, recv_bufsize)
@@ -126,6 +130,7 @@ def Pool(
             finally:
                 sock.close()
 
+        # Rreceiving the rest of body is delegated to the caller
         return code, response_headers, response_body()
 
     async def close():
