@@ -44,12 +44,6 @@ def Pool(
         parsed_url = urllib.parse.urlsplit(url)
         host, _, port_specified = parsed_url.netloc.partition(':')
 
-        async def get_ip_address(host):
-            try:
-                return str(ipaddress.ip_address(host))
-            except ValueError:
-                return str((await dns_resolve(host, TYPES.A))[0])
-
         async def connection():
             scheme = parsed_url.scheme
             port = \
@@ -138,6 +132,12 @@ def Pool(
 
         # Rreceiving the rest of body is delegated to the caller
         return code, response_headers, response_body()
+
+    async def get_ip_address(host):
+        try:
+            return str(ipaddress.ip_address(host))
+        except ValueError:
+            return str((await dns_resolve(host, TYPES.A))[0])
 
     async def close():
         dns_resolver_clear_cache()
