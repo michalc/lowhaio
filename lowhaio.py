@@ -27,11 +27,19 @@ def identity_or_chunked_handler(transfer_encoding):
     }[transfer_encoding]
 
 
+def get_sock_default():
+    sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
+                         proto=socket.IPPROTO_TCP)
+    sock.setblocking(False)
+    return sock
+
+
 def Pool(
         dns_resolver=Resolver,
         ssl_context=ssl.create_default_context,
         recv_bufsize=16384,
         transfer_encoding_handler=identity_or_chunked_handler,
+        get_sock=get_sock_default,
 ):
 
     loop = \
@@ -63,12 +71,6 @@ def Pool(
             raise
 
         return code, response_headers, response_body
-
-    def get_sock():
-        sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
-                             proto=socket.IPPROTO_TCP)
-        sock.setblocking(False)
-        return sock
 
     async def connect(sock, parsed_url):
         host, _, port_specified = parsed_url.netloc.partition(':')
