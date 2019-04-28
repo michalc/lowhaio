@@ -51,7 +51,7 @@ response = await buffered(body)
 ```
 
 
-## Scope and structures
+## Scope
 
 The scope of the core functions is restricted to:
 
