@@ -100,7 +100,7 @@ def Pool(
             while True:
                 incoming = await recv(loop, sock, recv_bufsize)
                 if not incoming:
-                    raise Exception()
+                    raise IOError()
                 unprocessed += incoming
                 header_end = unprocessed.index(b'\r\n\r\n')
                 if header_end != -1:
@@ -149,11 +149,11 @@ async def identity_response_body(loop, sock, recv_bufsize, response_headers_dict
     while total_remaining:
         incoming = await recv(loop, sock, recv_bufsize)
         if not incoming:
-            raise Exception()
+            raise IOError()
         total_received += len(incoming)
         total_remaining -= len(incoming)
         if total_remaining < 0:
-            raise Exception()
+            raise IOError()
         yield incoming
 
 
@@ -163,7 +163,7 @@ async def chunked_response_body(loop, sock, recv_bufsize, _, unprocessed):
         while b'\r\n' not in unprocessed:
             incoming = await recv(loop, sock, recv_bufsize)
             if not incoming:
-                raise Exception()
+                raise IOError()
             unprocessed += incoming
 
         # Find chunk length
@@ -191,7 +191,7 @@ async def chunked_response_body(loop, sock, recv_bufsize, _, unprocessed):
         while chunk_remaining:
             incoming = await recv(loop, sock, recv_bufsize)
             if not incoming:
-                raise Exception()
+                raise IOError()
             unprocessed += incoming
             in_chunk, unprocessed = \
                 unprocessed[:chunk_remaining], unprocessed[chunk_remaining:]
@@ -202,7 +202,7 @@ async def chunked_response_body(loop, sock, recv_bufsize, _, unprocessed):
         while len(unprocessed) < 2:
             incoming = await recv(loop, sock, recv_bufsize)
             if not incoming:
-                raise Exception()
+                raise IOError()
             unprocessed += incoming
         unprocessed = unprocessed[2:]
 
