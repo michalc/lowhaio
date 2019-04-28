@@ -58,7 +58,7 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
             sock = ssl_context.wrap_socket(tcp_sock,
                                            server_hostname=host,
                                            do_handshake_on_connect=False)
-            await complete_handshake(sock)
+            await complete_handshake(loop, sock)
             return sock
 
         try:
@@ -78,15 +78,15 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
                     for (key, value) in headers
                 ) + \
                 b'\r\n'
-            await sendall(sock, outgoing_header)
+            await sendall(loop, sock, outgoing_header)
 
             async for chunk in body:
                 if chunk:
-                    await sendall(sock, chunk)
+                    await sendall(loop, sock, chunk)
 
             unprocessed = b''
             while True:
-                incoming = await recv(sock)
+                incoming = await recv(loop, sock, recv_bufsize)
                 if not incoming:
                     raise Exception()
                 unprocessed += incoming
@@ -119,7 +119,7 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
                     yield unprocessed
 
                 while total_remaining:
-                    incoming = await recv(sock)
+                    incoming = await recv(loop, sock, recv_bufsize)
                     if not incoming:
                         raise Exception()
                     total_received += len(incoming)
@@ -137,7 +137,7 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
                 while True:
                     # Fetch until have chunk header
                     while b'\r\n' not in unprocessed:
-                        incoming = await recv(sock)
+                        incoming = await recv(loop, sock, recv_bufsize)
                         if not incoming:
                             raise Exception()
                         unprocessed += incoming
@@ -165,7 +165,7 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
 
                     # Fetch and yield rest of chunk
                     while chunk_remaining:
-                        incoming = await recv(sock)
+                        incoming = await recv(loop, sock, recv_bufsize)
                         if not incoming:
                             raise Exception()
                         unprocessed += incoming
@@ -176,7 +176,7 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
 
                     # Fetch until have chunk footer, and remove
                     while len(unprocessed) < 2:
-                        incoming = await recv(sock)
+                        incoming = await recv(loop, sock, recv_bufsize)
                         if not incoming:
                             raise Exception()
                         unprocessed += incoming
@@ -191,103 +191,106 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
 
         return code, response_headers, response_body()
 
-    async def sendall(sock, data):
-        try:
-            latest_num_bytes = sock.send(data)
-        except (BlockingIOError, ssl.SSLWantWriteError):
-            latest_num_bytes = 0
-        else:
-            if latest_num_bytes == 0:
-                raise IOError()
-
-        if latest_num_bytes == len(data):
-            return
-
-        total_num_bytes = latest_num_bytes
-
-        def writer():
-            nonlocal total_num_bytes
-            try:
-                latest_num_bytes = sock.send(data_memoryview[total_num_bytes:])
-            except (BlockingIOError, ssl.SSLWantWriteError):
-                pass
-            except BaseException as exception:
-                if not result.cancelled():
-                    result.set_exception(exception)
-            else:
-                total_num_bytes += latest_num_bytes
-                if latest_num_bytes == 0 and not result.cancelled():
-                    result.set_exception(IOError())
-                elif total_num_bytes == len(data) and not result.cancelled():
-                    result.set_result(None)
-
-        result = asyncio.Future()
-        fileno = sock.fileno()
-        loop.add_writer(fileno, writer)
-        data_memoryview = memoryview(data)
-
-        try:
-            return await result
-        finally:
-            loop.remove_writer(fileno)
-
-    async def recv(sock):
-        try:
-            return sock.recv(recv_bufsize)
-        except (BlockingIOError, ssl.SSLWantReadError):
-            pass
-
-        def reader():
-            try:
-                chunk = sock.recv(recv_bufsize)
-            except (BlockingIOError, ssl.SSLWantReadError):
-                pass
-            except BaseException as exception:
-                if not result.cancelled():
-                    result.set_exception(exception)
-            else:
-                if not result.cancelled():
-                    result.set_result(chunk)
-
-        result = asyncio.Future()
-        fileno = sock.fileno()
-        loop.add_reader(fileno, reader)
-
-        try:
-            return await result
-        finally:
-            loop.remove_reader(fileno)
-
-    async def complete_handshake(ssl_sock):
-        try:
-            return ssl_sock.do_handshake()
-        except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
-            pass
-
-        def handshake():
-            try:
-                ssl_sock.do_handshake()
-            except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
-                pass
-            except BaseException as exception:
-                if not done.done():
-                    done.set_exception(exception)
-            else:
-                if not done.done():
-                    done.set_result(None)
-
-        done = asyncio.Future()
-        fileno = ssl_sock.fileno()
-        loop.add_reader(fileno, handshake)
-        loop.add_writer(fileno, handshake)
-
-        try:
-            return await done
-        finally:
-            loop.remove_reader(fileno)
-            loop.remove_writer(fileno)
-
     async def close():
         pass
 
     return request, close
+
+
+async def sendall(loop, sock, data):
+    try:
+        latest_num_bytes = sock.send(data)
+    except (BlockingIOError, ssl.SSLWantWriteError):
+        latest_num_bytes = 0
+    else:
+        if latest_num_bytes == 0:
+            raise IOError()
+
+    if latest_num_bytes == len(data):
+        return
+
+    total_num_bytes = latest_num_bytes
+
+    def writer():
+        nonlocal total_num_bytes
+        try:
+            latest_num_bytes = sock.send(data_memoryview[total_num_bytes:])
+        except (BlockingIOError, ssl.SSLWantWriteError):
+            pass
+        except BaseException as exception:
+            if not result.cancelled():
+                result.set_exception(exception)
+        else:
+            total_num_bytes += latest_num_bytes
+            if latest_num_bytes == 0 and not result.cancelled():
+                result.set_exception(IOError())
+            elif total_num_bytes == len(data) and not result.cancelled():
+                result.set_result(None)
+
+    result = asyncio.Future()
+    fileno = sock.fileno()
+    loop.add_writer(fileno, writer)
+    data_memoryview = memoryview(data)
+
+    try:
+        return await result
+    finally:
+        loop.remove_writer(fileno)
+
+
+async def recv(loop, sock, recv_bufsize):
+    try:
+        return sock.recv(recv_bufsize)
+    except (BlockingIOError, ssl.SSLWantReadError):
+        pass
+
+    def reader():
+        try:
+            chunk = sock.recv(recv_bufsize)
+        except (BlockingIOError, ssl.SSLWantReadError):
+            pass
+        except BaseException as exception:
+            if not result.cancelled():
+                result.set_exception(exception)
+        else:
+            if not result.cancelled():
+                result.set_result(chunk)
+
+    result = asyncio.Future()
+    fileno = sock.fileno()
+    loop.add_reader(fileno, reader)
+
+    try:
+        return await result
+    finally:
+        loop.remove_reader(fileno)
+
+
+async def complete_handshake(loop, ssl_sock):
+    try:
+        return ssl_sock.do_handshake()
+    except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
+        pass
+
+    def handshake():
+        try:
+            ssl_sock.do_handshake()
+        except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
+            pass
+        except BaseException as exception:
+            if not done.done():
+                done.set_exception(exception)
+        else:
+            if not done.done():
+                done.set_result(None)
+
+    done = asyncio.Future()
+    fileno = ssl_sock.fileno()
+    loop.add_reader(fileno, handshake)
+    loop.add_writer(fileno, handshake)
+
+    try:
+        return await done
+    finally:
+        loop.remove_reader(fileno)
+        loop.remove_writer(fileno)
