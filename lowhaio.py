@@ -65,7 +65,6 @@ def Pool(
             code, response_headers, body_handler, unprocessed = await recv_header(sock)
             response_body = response_body_generator(sock, body_handler,
                                                     response_headers, unprocessed)
-            unprocessed = None  # So can be garbage collected
         except BaseException:
             sock.close()
             raise
@@ -160,8 +159,7 @@ async def identity_handler(loop, sock, recv_bufsize, response_headers, unprocess
         yield unprocessed
 
     while total_remaining:
-        # Allow the previous data to be garbage collected
-        unprocessed = None
+        unprocessed = None  # So can be garbage collected
         unprocessed = await recv(loop, sock, recv_bufsize)
         total_received += len(unprocessed)
         total_remaining -= len(unprocessed)
