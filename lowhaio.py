@@ -66,6 +66,7 @@ def Pool(
             )
             response_headers_dict = dict(response_headers)
             transfer_encoding = response_headers_dict.get(b'transfer-encoding', b'identity')
+            gen_func = transfer_encoding_handler(transfer_encoding)
 
         except BaseException:
             sock.close()
@@ -74,7 +75,6 @@ def Pool(
         async def response_body():
             nonlocal unprocessed
             try:
-                gen_func = transfer_encoding_handler(transfer_encoding)
                 generator = gen_func(loop, sock, recv_bufsize, response_headers_dict, unprocessed)
 
                 # Clear the reference to the initial unprocessed data, so it
