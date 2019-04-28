@@ -51,9 +51,14 @@ def Pool(
     async def request(method, url, params=(), headers=(), body=streamed(b'')):
         parsed_url = urllib.parse.urlsplit(url)
 
+        try:
+            ip_addresses = (ipaddress.ip_address(parsed_url.hostname),)
+        except ValueError:
+            ip_addresses = await dns_resolve(parsed_url.hostname, TYPES.A)
+
         sock = get_sock()
         try:
-            await connect(sock, parsed_url)
+            await connect(sock, parsed_url, str(ip_addresses[0]))
 
             if parsed_url.scheme == 'https':
                 sock = tls_wrapped(sock, parsed_url.hostname)
@@ -75,17 +80,13 @@ def Pool(
 
         return code, response_headers, response_body
 
-    async def connect(sock, parsed_url):
-        host, _, port_specified = parsed_url.netloc.partition(':')
+    async def connect(sock, parsed_url, ip_address):
         scheme = parsed_url.scheme
+        _, _, port_specified = parsed_url.netloc.partition(':')
         port = \
             port_specified if port_specified != '' else \
             443 if scheme == 'https' else \
             80
-        try:
-            ip_address = str(ipaddress.ip_address(host))
-        except ValueError:
-            ip_address = str((await dns_resolve(host, TYPES.A))[0])
         address = (ip_address, port)
         await loop.sock_connect(sock, address)
 
