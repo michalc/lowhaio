@@ -113,7 +113,11 @@ def Pool(
             port_specified if port_specified != '' else \
             443 if scheme == 'https' else \
             80
-        address = (await get_ip_address(host), port)
+        try:
+            ip_address = str(ipaddress.ip_address(host))
+        except ValueError:
+            ip_address = str((await dns_resolve(host, TYPES.A))[0])
+        address = (ip_address, port)
         tcp_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
                                  proto=socket.IPPROTO_TCP)
         tcp_sock.setblocking(False)
@@ -132,12 +136,6 @@ def Pool(
                                            do_handshake_on_connect=False)
         await complete_handshake(loop, ssl_sock)
         return ssl_sock
-
-    async def get_ip_address(host):
-        try:
-            return str(ipaddress.ip_address(host))
-        except ValueError:
-            return str((await dns_resolve(host, TYPES.A))[0])
 
     async def close():
         dns_resolver_clear_cache()
