@@ -20,7 +20,7 @@ async def buffered(data):
     return b''.join([chunk async for chunk in data])
 
 
-def Pool(resolver=Resolver, ssl_context=ssl.create_default_context):
+def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize=65536):
 
     loop = \
         asyncio.get_running_loop() if hasattr(asyncio, 'get_running_loop') else \
@@ -77,7 +77,7 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context):
 
             unprocessed = b''
             while True:
-                incoming = await recv(sock, 65536)
+                incoming = await recv(sock)
                 if not incoming:
                     raise Exception()
                 unprocessed += incoming
@@ -109,10 +109,11 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context):
                     total_remaining -= len(unprocessed)
 
                 while total_remaining:
-                    max_chunk_length = min(65536, total_remaining)
-                    chunk = await recv(sock, max_chunk_length)
+                    chunk = await recv(sock)
                     total_received += len(chunk)
                     total_remaining -= len(chunk)
+                    if total_remaining < 0:
+                        raise Exception()
                     if not chunk:
                         break
                     yield chunk
@@ -161,15 +162,15 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context):
         finally:
             loop.remove_writer(fileno)
 
-    async def recv(sock, max_chunk_length):
+    async def recv(sock):
         try:
-            return sock.recv(max_chunk_length)
+            return sock.recv(recv_bufsize)
         except (BlockingIOError, ssl.SSLWantReadError):
             pass
 
         def reader():
             try:
-                chunk = sock.recv(max_chunk_length)
+                chunk = sock.recv(recv_bufsize)
             except (BlockingIOError, ssl.SSLWantReadError):
                 pass
             except BaseException as exception:
