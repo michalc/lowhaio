@@ -113,84 +113,83 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
             total_received = 0
             total_remaining = int(response_headers_dict.get(b'content-length', 0))
 
-            try:
-                if unprocessed and total_remaining:
-                    total_received += len(unprocessed)
-                    total_remaining -= len(unprocessed)
-                    yield unprocessed
+            if unprocessed and total_remaining:
+                total_received += len(unprocessed)
+                total_remaining -= len(unprocessed)
+                yield unprocessed
 
-                while total_remaining:
-                    incoming = await recv(loop, sock, recv_bufsize)
-                    if not incoming:
-                        raise Exception()
-                    total_received += len(incoming)
-                    total_remaining -= len(incoming)
-                    if total_remaining < 0:
-                        raise Exception()
-                    yield incoming
-            finally:
-                sock.close()
+            while total_remaining:
+                incoming = await recv(loop, sock, recv_bufsize)
+                if not incoming:
+                    raise Exception()
+                total_received += len(incoming)
+                total_remaining -= len(incoming)
+                if total_remaining < 0:
+                    raise Exception()
+                yield incoming
 
         async def chunked_response_body(loop, sock, recv_bufsize,
                                         _, unprocessed):
-            try:
-                while True:
-                    # Fetch until have chunk header
-                    while b'\r\n' not in unprocessed:
-                        incoming = await recv(loop, sock, recv_bufsize)
-                        if not incoming:
-                            raise Exception()
-                        unprocessed += incoming
+            while True:
+                # Fetch until have chunk header
+                while b'\r\n' not in unprocessed:
+                    incoming = await recv(loop, sock, recv_bufsize)
+                    if not incoming:
+                        raise Exception()
+                    unprocessed += incoming
 
-                    # Find chunk length
-                    chunk_header_end = unprocessed.index(b'\r\n')
-                    chunk_header_hex = unprocessed[:chunk_header_end]
-                    chunk_length = int(chunk_header_hex, 16)
+                # Find chunk length
+                chunk_header_end = unprocessed.index(b'\r\n')
+                chunk_header_hex = unprocessed[:chunk_header_end]
+                chunk_length = int(chunk_header_hex, 16)
 
-                    # End of body signalled by a 0-length chunk
-                    if chunk_length == 0:
-                        break
+                # End of body signalled by a 0-length chunk
+                if chunk_length == 0:
+                    break
 
-                    # Remove chunk header
-                    unprocessed = unprocessed[chunk_header_end + 2:]
+                # Remove chunk header
+                unprocessed = unprocessed[chunk_header_end + 2:]
 
-                    # Yield whatever amount of chunk we have already, which
-                    # might be nothing
-                    chunk_remaining = chunk_length
+                # Yield whatever amount of chunk we have already, which
+                # might be nothing
+                chunk_remaining = chunk_length
+                in_chunk, unprocessed = \
+                    unprocessed[:chunk_remaining], unprocessed[chunk_remaining:]
+                if in_chunk:
+                    yield in_chunk
+                chunk_remaining -= len(in_chunk)
+
+                # Fetch and yield rest of chunk
+                while chunk_remaining:
+                    incoming = await recv(loop, sock, recv_bufsize)
+                    if not incoming:
+                        raise Exception()
+                    unprocessed += incoming
                     in_chunk, unprocessed = \
                         unprocessed[:chunk_remaining], unprocessed[chunk_remaining:]
-                    if in_chunk:
-                        yield in_chunk
                     chunk_remaining -= len(in_chunk)
+                    yield in_chunk
 
-                    # Fetch and yield rest of chunk
-                    while chunk_remaining:
-                        incoming = await recv(loop, sock, recv_bufsize)
-                        if not incoming:
-                            raise Exception()
-                        unprocessed += incoming
-                        in_chunk, unprocessed = \
-                            unprocessed[:chunk_remaining], unprocessed[chunk_remaining:]
-                        chunk_remaining -= len(in_chunk)
-                        yield in_chunk
+                # Fetch until have chunk footer, and remove
+                while len(unprocessed) < 2:
+                    incoming = await recv(loop, sock, recv_bufsize)
+                    if not incoming:
+                        raise Exception()
+                    unprocessed += incoming
+                unprocessed = unprocessed[2:]
 
-                    # Fetch until have chunk footer, and remove
-                    while len(unprocessed) < 2:
-                        incoming = await recv(loop, sock, recv_bufsize)
-                        if not incoming:
-                            raise Exception()
-                        unprocessed += incoming
-                    unprocessed = unprocessed[2:]
-
+        async def response_body():
+            try:
+                gen_func = \
+                    chunked_response_body if transfer_encoding == b'chunked' else \
+                    identity_response_body
+                generator = gen_func(loop, sock, recv_bufsize, response_headers_dict, unprocessed)
+                async for chunk in generator:
+                    yield chunk
             finally:
                 sock.close()
 
-        response_body = \
-            chunked_response_body if transfer_encoding == b'chunked' else \
-            identity_response_body
-
-        return code, response_headers, response_body(loop, sock, recv_bufsize,
-                                                     response_headers_dict, unprocessed)
+        return code, response_headers, response_body()
 
     async def close():
         pass
