@@ -31,7 +31,7 @@ def Pool(
         dns_resolver=Resolver,
         ssl_context=ssl.create_default_context,
         recv_bufsize=65536,
-        body_generator=identity_or_chunked,
+        transfer_encoding_handler=identity_or_chunked,
 ):
 
     loop = \
@@ -122,7 +122,7 @@ def Pool(
 
         async def response_body():
             try:
-                gen_func = body_generator(transfer_encoding)
+                gen_func = transfer_encoding_handler(transfer_encoding)
                 generator = gen_func(loop, sock, recv_bufsize, response_headers_dict, unprocessed)
                 async for chunk in generator:
                     yield chunk
