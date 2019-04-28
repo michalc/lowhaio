@@ -227,7 +227,7 @@ async def sendall(loop, sock, data):
         except (BlockingIOError, ssl.SSLWantWriteError):
             pass
         except BaseException as exception:
-            if not result.cancelled():
+            if not result.done():
                 result.set_exception(exception)
         else:
             total_num_bytes += latest_num_bytes
