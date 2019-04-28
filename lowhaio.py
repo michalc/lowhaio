@@ -30,7 +30,7 @@ def identity_or_chunked_handler(transfer_encoding):
 def Pool(
         dns_resolver=Resolver,
         ssl_context=ssl.create_default_context,
-        recv_bufsize=65536,
+        recv_bufsize=16384,
         transfer_encoding_handler=identity_or_chunked_handler,
 ):
 

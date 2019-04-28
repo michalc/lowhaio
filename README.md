@@ -24,7 +24,7 @@ path = 'my.file'
 content_length = str(os.stat(path).st_size).encode()
 async def file_data():
     with open(path, 'rb') as file:
-        for chunk in iter(lambda: file.read(65536), b''):
+        for chunk in iter(lambda: file.read(16384), b''):
             yield chunk
 
 code, headers, body = await request(
