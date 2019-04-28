@@ -47,11 +47,7 @@ def Pool(
         try:
             sock = await connection(parsed_url, host, port_specified)
             await sendall(loop, sock, outgoing_header(method, parsed_url, host, params, headers))
-
-            # Send body
-            async for chunk in body:
-                if chunk:
-                    await sendall(loop, sock, chunk)
+            await send_body(sock, body)
 
             # Receive header and start of body
             unprocessed = b''
@@ -136,6 +132,11 @@ def Pool(
                 for (key, value) in headers
             ) + \
             b'\r\n'
+
+    async def send_body(sock, body):
+        async for chunk in body:
+            if chunk:
+                await sendall(loop, sock, chunk)
 
     async def close():
         dns_resolver_clear_cache()
