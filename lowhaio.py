@@ -58,7 +58,11 @@ def Pool(
             if parsed_url.scheme == 'https':
                 sock = tls_wrapped(sock, parsed_url.hostname)
                 await tls_complete_handshake(loop, sock)
+        except BaseException:
+            sock.close()
+            raise
 
+        try:
             await send_header(sock, method, parsed_url, params, headers)
             await send_body(sock, body)
 
