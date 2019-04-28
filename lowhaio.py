@@ -149,12 +149,12 @@ async def identity_handler(loop, sock, recv_bufsize, response_headers_dict, unpr
         yield unprocessed
 
     while total_remaining:
-        incoming = await recv(loop, sock, recv_bufsize)
-        total_received += len(incoming)
-        total_remaining -= len(incoming)
+        unprocessed = await recv(loop, sock, recv_bufsize)
+        total_received += len(unprocessed)
+        total_remaining -= len(unprocessed)
         if total_remaining < 0:
             raise IOError()
-        yield incoming
+        yield unprocessed
 
 
 async def chunked_handler(loop, sock, recv_bufsize, _, unprocessed):
