@@ -155,6 +155,8 @@ async def identity_handler(loop, sock, recv_bufsize, response_headers_dict, unpr
         yield unprocessed
 
     while total_remaining:
+        # Allow the previous data to be garbage collected
+        unprocessed = None
         unprocessed = await recv(loop, sock, recv_bufsize)
         total_received += len(unprocessed)
         total_remaining -= len(unprocessed)
