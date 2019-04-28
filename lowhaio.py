@@ -49,7 +49,6 @@ def Pool(
                 return str(ipaddress.ip_address(host))
             except ValueError:
                 return str((await dns_resolve(host, TYPES.A))[0])
-        ip_address = await get_ip_address()
 
         scheme = parsed_url.scheme
         port = \
@@ -62,11 +61,11 @@ def Pool(
         tcp_sock.setblocking(False)
 
         async def non_tls_connection():
-            await loop.sock_connect(tcp_sock, (ip_address, port))
+            await loop.sock_connect(tcp_sock, (await get_ip_address(), port))
             return tcp_sock
 
         async def tls_connection():
-            await loop.sock_connect(tcp_sock, (ip_address, port))
+            await loop.sock_connect(tcp_sock, (await get_ip_address(), port))
             ssl_sock = ssl_context.wrap_socket(tcp_sock,
                                                server_hostname=host,
                                                do_handshake_on_connect=False)
