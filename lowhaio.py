@@ -49,30 +49,14 @@ def Pool(
             await sendall(loop, sock, outgoing_header(method, parsed_url, host, params, headers))
             await send_body(sock, body)
 
-            # Receive header and start of body
-            unprocessed = b''
-            while True:
-                unprocessed += await recv(loop, sock, recv_bufsize)
-                header_end = unprocessed.index(b'\r\n\r\n')
-                if header_end != -1:
-                    break
-            header_bytes, unprocessed = unprocessed[:header_end], unprocessed[header_end + 4:]
-            lines = header_bytes.split(b'\r\n')
-            code = lines[0][9:12]
-            response_headers = tuple(
-                (key.strip().lower(), value.strip())
-                for line in lines[1:]
-                for (key, _, value) in (line.partition(b':'),)
-            )
-            response_headers_dict = dict(response_headers)
-            transfer_encoding = response_headers_dict.get(b'transfer-encoding', b'identity')
-            body_handler = transfer_encoding_handler(transfer_encoding)
+            # pylint: disable=unused-variable
+            code, response_headers, body_handler, unprocessed = await recv_incoming_header(sock)
 
             async def _response_body():
                 nonlocal unprocessed
                 try:
                     generator = body_handler(loop, sock, recv_bufsize,
-                                             response_headers_dict, unprocessed)
+                                             response_headers, unprocessed)
 
                     # Clear the reference to the initial unprocessed data, so it
                     # can be garbage collected once its done with by the handler
@@ -136,6 +120,26 @@ def Pool(
             ) + \
             b'\r\n'
 
+    async def recv_incoming_header(sock):
+        unprocessed = b''
+        while True:
+            unprocessed += await recv(loop, sock, recv_bufsize)
+            header_end = unprocessed.index(b'\r\n\r\n')
+            if header_end != -1:
+                break
+        header_bytes, unprocessed = unprocessed[:header_end], unprocessed[header_end + 4:]
+        lines = header_bytes.split(b'\r\n')
+        code = lines[0][9:12]
+        response_headers = tuple(
+            (key.strip().lower(), value.strip())
+            for line in lines[1:]
+            for (key, _, value) in (line.partition(b':'),)
+        )
+        transfer_encoding = dict(response_headers).get(b'transfer-encoding', b'identity')
+        body_handler = transfer_encoding_handler(transfer_encoding)
+
+        return code, response_headers, body_handler, unprocessed
+
     async def send_body(sock, body):
         async for chunk in body:
             if chunk:
@@ -147,9 +151,9 @@ def Pool(
     return request, close
 
 
-async def identity_handler(loop, sock, recv_bufsize, response_headers_dict, unprocessed):
+async def identity_handler(loop, sock, recv_bufsize, response_headers, unprocessed):
     total_received = 0
-    total_remaining = int(response_headers_dict.get(b'content-length', 0))
+    total_remaining = int(dict(response_headers).get(b'content-length', 0))
 
     if unprocessed and total_remaining:
         total_received += len(unprocessed)
