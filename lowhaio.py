@@ -44,7 +44,7 @@ def Pool(
         parsed_url = urllib.parse.urlsplit(url)
         host, _, port_specified = parsed_url.netloc.partition(':')
 
-        async def get_ip_address():
+        async def get_ip_address(host):
             try:
                 return str(ipaddress.ip_address(host))
             except ValueError:
@@ -56,7 +56,7 @@ def Pool(
                 port_specified if port_specified != '' else \
                 443 if scheme == 'https' else \
                 80
-            address = (await get_ip_address(), port)
+            address = (await get_ip_address(host), port)
             tcp_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
                                      proto=socket.IPPROTO_TCP)
             tcp_sock.setblocking(False)
