@@ -8,7 +8,7 @@ def long_description():
 
 setuptools.setup(
     name='lowhaio',
-    version='0.0.16',
+    version='0.0.17',
     author='Michal Charemza',
     author_email='michal@charemza.name',
     description='Lightweight Python asyncio HTTP/1.1 client. ',
