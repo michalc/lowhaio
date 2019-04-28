@@ -44,32 +44,6 @@ def Pool(
         parsed_url = urllib.parse.urlsplit(url)
         host, _, port_specified = parsed_url.netloc.partition(':')
 
-        async def connection(parsed_url, host, port_specified):
-            scheme = parsed_url.scheme
-            port = \
-                port_specified if port_specified != '' else \
-                443 if scheme == 'https' else \
-                80
-            address = (await get_ip_address(host), port)
-            tcp_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
-                                     proto=socket.IPPROTO_TCP)
-            tcp_sock.setblocking(False)
-            return \
-                await tls_connection(tcp_sock, address) if scheme == 'https' else \
-                await non_tls_connection(tcp_sock, address)
-
-        async def non_tls_connection(tcp_sock, address):
-            await loop.sock_connect(tcp_sock, address)
-            return tcp_sock
-
-        async def tls_connection(tcp_sock, address):
-            await loop.sock_connect(tcp_sock, address)
-            ssl_sock = ssl_context.wrap_socket(tcp_sock,
-                                               server_hostname=host,
-                                               do_handshake_on_connect=False)
-            await complete_handshake(loop, ssl_sock)
-            return ssl_sock
-
         try:
             sock = await connection(parsed_url, host, port_specified)
 
@@ -132,6 +106,32 @@ def Pool(
 
         # Rreceiving the rest of body is delegated to the caller
         return code, response_headers, response_body()
+
+    async def connection(parsed_url, host, port_specified):
+        scheme = parsed_url.scheme
+        port = \
+            port_specified if port_specified != '' else \
+            443 if scheme == 'https' else \
+            80
+        address = (await get_ip_address(host), port)
+        tcp_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
+                                 proto=socket.IPPROTO_TCP)
+        tcp_sock.setblocking(False)
+        return \
+            await tls_connection(tcp_sock, address, host) if scheme == 'https' else \
+            await non_tls_connection(tcp_sock, address)
+
+    async def non_tls_connection(tcp_sock, address):
+        await loop.sock_connect(tcp_sock, address)
+        return tcp_sock
+
+    async def tls_connection(tcp_sock, address, host):
+        await loop.sock_connect(tcp_sock, address)
+        ssl_sock = ssl_context.wrap_socket(tcp_sock,
+                                           server_hostname=host,
+                                           do_handshake_on_connect=False)
+        await complete_handshake(loop, ssl_sock)
+        return ssl_sock
 
     async def get_ip_address(host):
         try:
