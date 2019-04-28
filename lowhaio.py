@@ -43,8 +43,14 @@ def Pool(
     async def request(method, url, params=(), headers=(), body=streamed(b'')):
         parsed_url = urllib.parse.urlsplit(url)
 
+        sock = get_sock()
         try:
-            sock = await connection(parsed_url)
+            await connect(sock, parsed_url)
+
+            if parsed_url.scheme == 'https':
+                sock = tls_wrapped(sock, parsed_url.hostname)
+                await tls_complete_handshake(loop, sock)
+
             await send_header(sock, method, parsed_url, params, headers)
             await send_body(sock, body)
 
@@ -57,7 +63,13 @@ def Pool(
 
         return code, response_headers, response_body
 
-    async def connection(parsed_url):
+    def get_sock():
+        sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
+                             proto=socket.IPPROTO_TCP)
+        sock.setblocking(False)
+        return sock
+
+    async def connect(sock, parsed_url):
         host, _, port_specified = parsed_url.netloc.partition(':')
         scheme = parsed_url.scheme
         port = \
@@ -69,24 +81,12 @@ def Pool(
         except ValueError:
             ip_address = str((await dns_resolve(host, TYPES.A))[0])
         address = (ip_address, port)
-        tcp_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
-                                 proto=socket.IPPROTO_TCP)
-        tcp_sock.setblocking(False)
-        return \
-            await tls_connection(tcp_sock, address, host) if scheme == 'https' else \
-            await non_tls_connection(tcp_sock, address)
+        await loop.sock_connect(sock, address)
 
-    async def non_tls_connection(tcp_sock, address):
-        await loop.sock_connect(tcp_sock, address)
-        return tcp_sock
-
-    async def tls_connection(tcp_sock, address, host):
-        await loop.sock_connect(tcp_sock, address)
-        ssl_sock = ssl_context.wrap_socket(tcp_sock,
-                                           server_hostname=host,
-                                           do_handshake_on_connect=False)
-        await complete_handshake(loop, ssl_sock)
-        return ssl_sock
+    def tls_wrapped(sock, host):
+        return ssl_context.wrap_socket(sock,
+                                       server_hostname=host,
+                                       do_handshake_on_connect=False)
 
     async def send_header(sock, method, parsed_url, params, headers):
         outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
@@ -284,7 +284,7 @@ async def _recv(loop, sock, recv_bufsize):
         loop.remove_reader(fileno)
 
 
-async def complete_handshake(loop, ssl_sock):
+async def tls_complete_handshake(loop, ssl_sock):
     try:
         return ssl_sock.do_handshake()
     except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
