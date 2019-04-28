@@ -150,18 +150,15 @@ def Pool(
 
 
 async def identity_handler(loop, sock, recv_bufsize, response_headers, unprocessed):
-    total_received = 0
     total_remaining = int(dict(response_headers).get(b'content-length', 0))
 
     if unprocessed and total_remaining:
-        total_received += len(unprocessed)
         total_remaining -= len(unprocessed)
         yield unprocessed
 
     while total_remaining:
         unprocessed = None  # So can be garbage collected
         unprocessed = await recv(loop, sock, recv_bufsize)
-        total_received += len(unprocessed)
         total_remaining -= len(unprocessed)
         if total_remaining < 0:
             raise IOError()
