@@ -50,7 +50,7 @@ def Pool(
             await send_body(sock, body)
 
             # pylint: disable=unused-variable
-            code, response_headers, body_handler, unprocessed = await recv_incoming_header(sock)
+            code, response_headers, body_handler, unprocessed = await recv_header(sock)
 
             async def _response_body():
                 nonlocal unprocessed
@@ -120,7 +120,7 @@ def Pool(
             ) + \
             b'\r\n'
 
-    async def recv_incoming_header(sock):
+    async def recv_header(sock):
         unprocessed = b''
         while True:
             unprocessed += await recv(loop, sock, recv_bufsize)
