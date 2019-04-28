@@ -98,8 +98,7 @@ def Pool(
 
             unprocessed = b''
             while True:
-                incoming = await recv(loop, sock, recv_bufsize)
-                unprocessed += incoming
+                unprocessed += await recv(loop, sock, recv_bufsize)
                 header_end = unprocessed.index(b'\r\n\r\n')
                 if header_end != -1:
                     break
@@ -157,8 +156,7 @@ async def chunked_handler(loop, sock, recv_bufsize, _, unprocessed):
     while True:
         # Fetch until have chunk header
         while b'\r\n' not in unprocessed:
-            incoming = await recv(loop, sock, recv_bufsize)
-            unprocessed += incoming
+            unprocessed += await recv(loop, sock, recv_bufsize)
 
         # Find chunk length
         chunk_header_end = unprocessed.index(b'\r\n')
@@ -183,8 +181,7 @@ async def chunked_handler(loop, sock, recv_bufsize, _, unprocessed):
 
         # Fetch and yield rest of chunk
         while chunk_remaining:
-            incoming = await recv(loop, sock, recv_bufsize)
-            unprocessed += incoming
+            unprocessed += await recv(loop, sock, recv_bufsize)
             in_chunk, unprocessed = \
                 unprocessed[:chunk_remaining], unprocessed[chunk_remaining:]
             chunk_remaining -= len(in_chunk)
@@ -192,8 +189,7 @@ async def chunked_handler(loop, sock, recv_bufsize, _, unprocessed):
 
         # Fetch until have chunk footer, and remove
         while len(unprocessed) < 2:
-            incoming = await recv(loop, sock, recv_bufsize)
-            unprocessed += incoming
+            unprocessed += await recv(loop, sock, recv_bufsize)
         unprocessed = unprocessed[2:]
 
 
