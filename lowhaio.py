@@ -57,6 +57,7 @@ def Pool(
             code, response_headers, body_handler, unprocessed = await recv_header(sock)
             response_body = response_body_generator(sock, body_handler,
                                                     response_headers, unprocessed)
+            unprocessed = None  # So can be garbage collected
         except BaseException:
             sock.close()
             raise
@@ -131,10 +132,7 @@ def Pool(
     async def response_body_generator(sock, body_handler, response_headers, unprocessed):
         try:
             generator = body_handler(loop, sock, recv_bufsize, response_headers, unprocessed)
-
-            # Clear the reference to the initial unprocessed data, so it
-            # can be garbage collected once its done with by the handler
-            unprocessed = None
+            unprocessed = None  # So can be garbage collected
 
             async for chunk in generator:
                 yield chunk
