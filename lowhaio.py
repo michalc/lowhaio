@@ -122,9 +122,15 @@ def Pool(
             raise
 
         async def response_body():
+            nonlocal unprocessed
             try:
                 gen_func = transfer_encoding_handler(transfer_encoding)
                 generator = gen_func(loop, sock, recv_bufsize, response_headers_dict, unprocessed)
+
+                # Clear the reference to the initial unprocessed data, so it
+                # can be garbage collected once its done with by the handler
+                unprocessed = None
+
                 async for chunk in generator:
                     yield chunk
             finally:
