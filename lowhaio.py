@@ -99,8 +99,6 @@ def Pool(
             unprocessed = b''
             while True:
                 incoming = await recv(loop, sock, recv_bufsize)
-                if not incoming:
-                    raise IOError()
                 unprocessed += incoming
                 header_end = unprocessed.index(b'\r\n\r\n')
                 if header_end != -1:
@@ -148,8 +146,6 @@ async def identity_handler(loop, sock, recv_bufsize, response_headers_dict, unpr
 
     while total_remaining:
         incoming = await recv(loop, sock, recv_bufsize)
-        if not incoming:
-            raise IOError()
         total_received += len(incoming)
         total_remaining -= len(incoming)
         if total_remaining < 0:
@@ -162,8 +158,6 @@ async def chunked_handler(loop, sock, recv_bufsize, _, unprocessed):
         # Fetch until have chunk header
         while b'\r\n' not in unprocessed:
             incoming = await recv(loop, sock, recv_bufsize)
-            if not incoming:
-                raise IOError()
             unprocessed += incoming
 
         # Find chunk length
@@ -190,8 +184,6 @@ async def chunked_handler(loop, sock, recv_bufsize, _, unprocessed):
         # Fetch and yield rest of chunk
         while chunk_remaining:
             incoming = await recv(loop, sock, recv_bufsize)
-            if not incoming:
-                raise IOError()
             unprocessed += incoming
             in_chunk, unprocessed = \
                 unprocessed[:chunk_remaining], unprocessed[chunk_remaining:]
@@ -201,8 +193,6 @@ async def chunked_handler(loop, sock, recv_bufsize, _, unprocessed):
         # Fetch until have chunk footer, and remove
         while len(unprocessed) < 2:
             incoming = await recv(loop, sock, recv_bufsize)
-            if not incoming:
-                raise IOError()
             unprocessed += incoming
         unprocessed = unprocessed[2:]
 
@@ -249,6 +239,13 @@ async def sendall(loop, sock, data):
 
 
 async def recv(loop, sock, recv_bufsize):
+    incoming = await _recv(loop, sock, recv_bufsize)
+    if not incoming:
+        raise IOError()
+    return incoming
+
+
+async def _recv(loop, sock, recv_bufsize):
     try:
         return sock.recv(recv_bufsize)
     except (BlockingIOError, ssl.SSLWantReadError):
