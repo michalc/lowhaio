@@ -20,17 +20,18 @@ async def buffered(data):
     return b''.join([chunk async for chunk in data])
 
 
-def identity_or_chunked_encoding(transfer_encoding):
-    return \
-        chunked_response_body if transfer_encoding == b'chunked' else \
-        identity_response_body
+def identity_or_chunked(transfer_encoding):
+    return {
+        b'chunked': chunked_response_body,
+        b'identity': identity_response_body,
+    }[transfer_encoding]
 
 
 def Pool(
         dns_resolver=Resolver,
         ssl_context=ssl.create_default_context,
         recv_bufsize=65536,
-        body_generator=identity_or_chunked_encoding,
+        body_generator=identity_or_chunked,
 ):
 
     loop = \
