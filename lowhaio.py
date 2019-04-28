@@ -96,9 +96,10 @@ def Pool(
         outgoing_path = urllib.parse.quote(parsed_url.path).encode()
         outgoing_path_qs = outgoing_path + \
             ((b'?' + outgoing_qs) if outgoing_qs != b'' else b'')
+        host_specified = any(True for key, value in headers if key == b'host')
         headers_with_host = \
-            ((b'host', parsed_url.hostname.encode('idna')),) + \
-            headers
+            headers if host_specified else \
+            ((b'host', parsed_url.hostname.encode('idna')),) + headers
         header = \
             method + b' ' + outgoing_path_qs + b' HTTP/1.1\r\n' + \
             b''.join(
