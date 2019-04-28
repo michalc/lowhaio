@@ -119,6 +119,50 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(response_dict['form'], {'some-data': 'something'})
 
     @async_test
+    async def test_https_get_chunked(self):
+        request, close = Pool()
+        self.add_async_cleanup(close)
+
+        _, _, body = await request(
+            b'GET', 'https://postman-echo.com/stream/1000',
+            params=(('some', 'arg'),),
+        )
+        body_bytes = await buffered(body)
+
+        # Slightly odd response: a concatanation of identical JSON objects
+        part_length = int(len(body_bytes) / 1000)
+        parts = [body_bytes[i:i+part_length] for i in range(0, len(body_bytes), part_length)]
+
+        self.assertEqual(len(parts), 1000)
+
+        for part in parts:
+            response_dict = json.loads(part)
+            self.assertEqual(response_dict['headers']['host'], 'postman-echo.com')
+            self.assertEqual(response_dict['args'], {'n': '1000', 'some': 'arg'})
+
+    @async_test
+    async def test_http_get_chunked(self):
+        request, close = Pool()
+        self.add_async_cleanup(close)
+
+        _, _, body = await request(
+            b'GET', 'http://postman-echo.com/stream/1000',
+            params=(('some', 'arg'),),
+        )
+        body_bytes = await buffered(body)
+
+        # Slightly odd response: a concatanation of identical JSON objects
+        part_length = int(len(body_bytes) / 1000)
+        parts = [body_bytes[i:i+part_length] for i in range(0, len(body_bytes), part_length)]
+
+        self.assertEqual(len(parts), 1000)
+
+        for part in parts:
+            response_dict = json.loads(part)
+            self.assertEqual(response_dict['headers']['host'], 'postman-echo.com')
+            self.assertEqual(response_dict['args'], {'n': '1000', 'some': 'arg'})
+
+    @async_test
     async def test_https_post_small(self):
         request, close = Pool()
         self.add_async_cleanup(close)
