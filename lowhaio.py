@@ -42,11 +42,10 @@ def Pool(
 
     async def request(method, url, params=(), headers=(), body=streamed(b'')):
         parsed_url = urllib.parse.urlsplit(url)
-        host, _, port_specified = parsed_url.netloc.partition(':')
 
         try:
-            sock = await connection(parsed_url, host, port_specified)
-            await send_header(sock, method, parsed_url, host, params, headers)
+            sock = await connection(parsed_url)
+            await send_header(sock, method, parsed_url, params, headers)
             await send_body(sock, body)
 
             code, response_headers, body_handler, unprocessed = await recv_header(sock)
@@ -58,7 +57,8 @@ def Pool(
 
         return code, response_headers, response_body
 
-    async def connection(parsed_url, host, port_specified):
+    async def connection(parsed_url):
+        host, _, port_specified = parsed_url.netloc.partition(':')
         scheme = parsed_url.scheme
         port = \
             port_specified if port_specified != '' else \
@@ -88,14 +88,14 @@ def Pool(
         await complete_handshake(loop, ssl_sock)
         return ssl_sock
 
-    async def send_header(sock, method, parsed_url, host, params, headers):
+    async def send_header(sock, method, parsed_url, params, headers):
         outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
         outgoing_path = urllib.parse.quote(parsed_url.path).encode()
         outgoing_path_qs = outgoing_path + \
             ((b'?' + outgoing_qs) if outgoing_qs != b'' else b'')
         header = \
             method + b' ' + outgoing_path_qs + b' HTTP/1.1\r\n' + \
-            b'host:' + host.encode('idna') + b'\r\n' + \
+            b'host:' + parsed_url.hostname.encode('idna') + b'\r\n' + \
             b''.join(
                 key + b':' + value + b'\r\n'
                 for (key, value) in headers
