@@ -60,12 +60,18 @@ def Pool(
                                  proto=socket.IPPROTO_TCP)
         tcp_sock.setblocking(False)
 
-        async def non_tls_connection():
-            await loop.sock_connect(tcp_sock, (await get_ip_address(), port))
+        async def connection():
+            address = (await get_ip_address(), port)
+            return \
+                await tls_connection(address) if scheme == 'https' else \
+                await non_tls_connection(address)
+
+        async def non_tls_connection(address):
+            await loop.sock_connect(tcp_sock, address)
             return tcp_sock
 
-        async def tls_connection():
-            await loop.sock_connect(tcp_sock, (await get_ip_address(), port))
+        async def tls_connection(address):
+            await loop.sock_connect(tcp_sock, address)
             ssl_sock = ssl_context.wrap_socket(tcp_sock,
                                                server_hostname=host,
                                                do_handshake_on_connect=False)
@@ -73,10 +79,7 @@ def Pool(
             return ssl_sock
 
         try:
-            # Make connection
-            sock = \
-                await tls_connection() if scheme == 'https' else \
-                await non_tls_connection()
+            sock = await connection()
 
             # Send header
             outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
