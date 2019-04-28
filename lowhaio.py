@@ -46,7 +46,7 @@ def Pool(
 
         try:
             sock = await connection(parsed_url, host, port_specified)
-            await sendall(loop, sock, outgoing_header(method, parsed_url, host, params, headers))
+            await send_header(sock, method, parsed_url, host, params, headers)
             await send_body(sock, body)
 
             # pylint: disable=unused-variable
@@ -106,12 +106,12 @@ def Pool(
         await complete_handshake(loop, ssl_sock)
         return ssl_sock
 
-    def outgoing_header(method, parsed_url, host, params, headers):
+    async def send_header(sock, method, parsed_url, host, params, headers):
         outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
         outgoing_path = urllib.parse.quote(parsed_url.path).encode()
         outgoing_path_qs = outgoing_path + \
             ((b'?' + outgoing_qs) if outgoing_qs != b'' else b'')
-        return \
+        header = \
             method + b' ' + outgoing_path_qs + b' HTTP/1.1\r\n' + \
             b'host:' + host.encode('idna') + b'\r\n' + \
             b''.join(
@@ -119,6 +119,7 @@ def Pool(
                 for (key, value) in headers
             ) + \
             b'\r\n'
+        await sendall(loop, sock, header)
 
     async def recv_header(sock):
         unprocessed = b''
