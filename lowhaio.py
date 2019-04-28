@@ -28,7 +28,7 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context):
     ssl_context = ssl_context()
     resolve, _ = resolver()
 
-    async def request(method, url, headers=(), body=streamed(b'')):
+    async def request(method, url, params=(), headers=(), body=streamed(b'')):
         parsed_url = urllib.parse.urlsplit(url)
         host, _, port_specified = parsed_url.netloc.partition(':')
 
@@ -57,9 +57,13 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context):
                                                do_handshake_on_connect=False)
                 await complete_handshake(sock)
 
+            outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
+            outgoing_path = urllib.parse.quote(parsed_url.path).encode()
+            outgoing_path_qs = outgoing_path + \
+                ((b'?' + outgoing_qs) if outgoing_qs != b'' else b'')
             outgoing_header = \
-                method + b' ' + parsed_url.path.encode() + b' HTTP/1.1\r\n' + \
-                b'host:' + host.encode() + b'\r\n' + \
+                method + b' ' + outgoing_path_qs + b' HTTP/1.1\r\n' + \
+                b'host:' + host.encode('idna') + b'\r\n' + \
                 b''.join(
                     key + b':' + value + b'\r\n'
                     for (key, value) in headers

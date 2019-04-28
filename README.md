@@ -28,7 +28,8 @@ async def file_data():
             yield chunk
 
 code, headers, body = await request(
-    b'POST', 'https://example.com/path', ((b'content-length': content_length),), file_data(),
+    b'POST', 'https://example.com/path',
+    params=(), headers=((b'content-length': content_length),), body=file_data(),
 )
 async for chunk in body:
     print(chunk)
@@ -40,9 +41,10 @@ However, there are helper functions `streamed` and `buffered` when this isn't re
 from lowhaio import Pool, streamed, buffered
 
 content = b'some-data'
-content_length = b'9'
+content_length = 
 code, headers, body = await request(
-    b'POST', 'https://example.com/path', ((b'content-length': content_length),), streamed(content),
+    b'POST', 'https://example.com/path',
+    params=(), headers=((b'content-length': content_length),), body=streamed(content),
 )
 
 response = await buffered(body)

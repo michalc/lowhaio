@@ -54,7 +54,7 @@ class TestIntegration(unittest.TestCase):
         request, close = Pool()
         self.add_async_cleanup(close)
         _, _, body = await request(
-            b'POST', 'http://localhost:8080/page', (
+            b'POST', 'http://localhost:8080/page', (), (
                 (b'content-length', content_length),
             ), data(),
         )
@@ -78,7 +78,7 @@ class TestEndToEnd(unittest.TestCase):
             yield b'some-data=something'
 
         code, headers, body = await request(
-            b'POST', 'http://postman-echo.com/post', (
+            b'POST', 'http://postman-echo.com/post', (), (
                 (b'content-length', b'19'),
                 (b'content-type', b'application/x-www-form-urlencoded'),
             ), data(),
@@ -102,7 +102,7 @@ class TestEndToEnd(unittest.TestCase):
         self.add_async_cleanup(close)
 
         code, headers, body = await request(
-            b'POST', 'http://postman-echo.com/post', (
+            b'POST', 'http://postman-echo.com/post', (), (
                 (b'content-length', b'19'),
                 (b'content-type', b'application/x-www-form-urlencoded'),
             ), streamed(b'some-data=something'),
@@ -127,10 +127,16 @@ class TestEndToEnd(unittest.TestCase):
             yield b'some-data=something'
 
         code, headers, body = await request(
-            b'POST', 'https://postman-echo.com/post', (
+            b'POST', 'https://postman-echo.com/post',
+            params=(
+                ('some', 'value'),
+                ('?=&', '/&'),
+            ),
+            headers=(
                 (b'content-length', b'19'),
                 (b'content-type', b'application/x-www-form-urlencoded'),
-            ), data(),
+            ),
+            body=data(),
         )
         body_bytes = b''
         async for chunk in body:
@@ -141,6 +147,7 @@ class TestEndToEnd(unittest.TestCase):
 
         self.assertEqual(code, b'200')
         self.assertEqual(headers_dict[b'content-type'], b'application/json; charset=utf-8')
+        self.assertEqual(response_dict['args'], {'some': 'value', '?=&': '/&'})
         self.assertEqual(response_dict['headers']['host'], 'postman-echo.com')
         self.assertEqual(response_dict['headers']['content-length'], '19')
         self.assertEqual(response_dict['form'], {'some-data': 'something'})
@@ -154,7 +161,7 @@ class TestEndToEnd(unittest.TestCase):
             yield b''
 
         _, _, body = await request(
-            b'GET', 'http://www.ovh.net/files/1Mio.dat', (), data(),
+            b'GET', 'http://www.ovh.net/files/1Mio.dat', (), (), data(),
         )
         m = hashlib.md5()
         async for chunk in body:
@@ -170,7 +177,7 @@ class TestEndToEnd(unittest.TestCase):
             yield b''
 
         _, _, body = await request(
-            b'GET', 'http://212.183.159.230/5MB.zip', (), data(),
+            b'GET', 'http://212.183.159.230/5MB.zip', (), (), data(),
         )
         m = hashlib.md5()
         async for chunk in body:
