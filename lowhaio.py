@@ -119,14 +119,14 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context, recv_bufsize
                     yield unprocessed
 
                 while total_remaining:
-                    chunk = await recv(sock)
-                    total_received += len(chunk)
-                    total_remaining -= len(chunk)
+                    incoming = await recv(sock)
+                    if not incoming:
+                        raise Exception()
+                    total_received += len(incoming)
+                    total_remaining -= len(incoming)
                     if total_remaining < 0:
                         raise Exception()
-                    if not chunk:
-                        break
-                    yield chunk
+                    yield incoming
             finally:
                 sock.close()
 
