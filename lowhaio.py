@@ -46,21 +46,7 @@ def Pool(
 
         try:
             sock = await connection(parsed_url, host, port_specified)
-
-            # Send header
-            outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
-            outgoing_path = urllib.parse.quote(parsed_url.path).encode()
-            outgoing_path_qs = outgoing_path + \
-                ((b'?' + outgoing_qs) if outgoing_qs != b'' else b'')
-            outgoing_header = \
-                method + b' ' + outgoing_path_qs + b' HTTP/1.1\r\n' + \
-                b'host:' + host.encode('idna') + b'\r\n' + \
-                b''.join(
-                    key + b':' + value + b'\r\n'
-                    for (key, value) in headers
-                ) + \
-                b'\r\n'
-            await sendall(loop, sock, outgoing_header)
+            await sendall(loop, sock, outgoing_header(method, parsed_url, host, params, headers))
 
             # Send body
             async for chunk in body:
@@ -136,6 +122,20 @@ def Pool(
                                            do_handshake_on_connect=False)
         await complete_handshake(loop, ssl_sock)
         return ssl_sock
+
+    def outgoing_header(method, parsed_url, host, params, headers):
+        outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
+        outgoing_path = urllib.parse.quote(parsed_url.path).encode()
+        outgoing_path_qs = outgoing_path + \
+            ((b'?' + outgoing_qs) if outgoing_qs != b'' else b'')
+        return \
+            method + b' ' + outgoing_path_qs + b' HTTP/1.1\r\n' + \
+            b'host:' + host.encode('idna') + b'\r\n' + \
+            b''.join(
+                key + b':' + value + b'\r\n'
+                for (key, value) in headers
+            ) + \
+            b'\r\n'
 
     async def close():
         dns_resolver_clear_cache()
