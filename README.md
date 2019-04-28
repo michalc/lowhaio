@@ -7,7 +7,7 @@ Work in progress. These docs serve as a rough design spec.
 ---
 
 
-A lightweight Python asyncio HTTP/1.1 client.
+A lightweight Python asyncio HTTP/1.1 client. No additional tasks are created; all code is in a single module; and other than the standard library only a single dependency is required, [aiodnsresolver](https://github.com/michalc/aiodnsresolver).
 
 
 ## Usage
