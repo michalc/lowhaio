@@ -38,7 +38,7 @@ def Pool(
         asyncio.get_running_loop() if hasattr(asyncio, 'get_running_loop') else \
         asyncio.get_event_loop()
     ssl_context = ssl_context()
-    resolve, _ = dns_resolver()
+    dns_resolve, _ = dns_resolver()
 
     async def request(method, url, params=(), headers=(), body=streamed(b'')):
         parsed_url = urllib.parse.urlsplit(url)
@@ -48,7 +48,7 @@ def Pool(
             try:
                 return str(ipaddress.ip_address(host))
             except ValueError:
-                return str((await resolve(host, TYPES.A))[0])
+                return str((await dns_resolve(host, TYPES.A))[0])
         ip_address = await get_ip_address()
 
         scheme = parsed_url.scheme
