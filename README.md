@@ -64,4 +64,4 @@ This is to make the core behaviour useful to a reasonable range of uses, but to 
 - following redirects (although this is planned for a helper function);
 - cookies;
 - compressing/decompressing requests/responses;
-- authorisation.
+- authentication.
