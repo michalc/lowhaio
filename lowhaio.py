@@ -50,10 +50,6 @@ def Pool(
             except ValueError:
                 return str((await dns_resolve(host, TYPES.A))[0])
 
-        tcp_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
-                                 proto=socket.IPPROTO_TCP)
-        tcp_sock.setblocking(False)
-
         async def connection():
             scheme = parsed_url.scheme
             port = \
@@ -61,15 +57,18 @@ def Pool(
                 443 if scheme == 'https' else \
                 80
             address = (await get_ip_address(), port)
+            tcp_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
+                                     proto=socket.IPPROTO_TCP)
+            tcp_sock.setblocking(False)
             return \
-                await tls_connection(address) if scheme == 'https' else \
-                await non_tls_connection(address)
+                await tls_connection(tcp_sock, address) if scheme == 'https' else \
+                await non_tls_connection(tcp_sock, address)
 
-        async def non_tls_connection(address):
+        async def non_tls_connection(tcp_sock, address):
             await loop.sock_connect(tcp_sock, address)
             return tcp_sock
 
-        async def tls_connection(address):
+        async def tls_connection(tcp_sock, address):
             await loop.sock_connect(tcp_sock, address)
             ssl_sock = ssl_context.wrap_socket(tcp_sock,
                                                server_hostname=host,
