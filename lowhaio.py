@@ -59,7 +59,7 @@ def Pool(resolver=Resolver, ssl_context=ssl.create_default_context):
 
             outgoing_header = \
                 method + b' ' + parsed_url.path.encode() + b' HTTP/1.1\r\n' + \
-                b'host:' + parsed_url.hostname.encode() + b'\r\n' + \
+                b'host:' + host.encode() + b'\r\n' + \
                 b''.join(
                     key + b':' + value + b'\r\n'
                     for (key, value) in headers
