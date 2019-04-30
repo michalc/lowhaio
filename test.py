@@ -62,6 +62,49 @@ class TestIntegration(unittest.TestCase):
             pass
         self.assertEqual(posted_data_received, b'-' * 1000000 * 10)
 
+    @async_test
+    async def test_http_chunked_responses(self):
+        response_datas = []
+
+        data = b'abcdefghijklmnopqrstuvwxyz'
+        chunk_size = None
+
+        async def handle_get(request):
+            await request.content.read()
+            response = web.StreamResponse()
+            await response.prepare(request)
+
+            for chars in [data[i:i+chunk_size] for i in range(0, len(data), chunk_size)]:
+                await response.write(chars)
+                await asyncio.sleep(0)
+
+            return response
+
+        app = web.Application()
+        app.add_routes([
+            web.get('/page', handle_get)
+        ])
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.add_async_cleanup(runner.cleanup)
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+
+        request, close = Pool()
+        self.add_async_cleanup(close)
+
+        for chunk_size in range(1, 27):
+            _, headers, body = await request(
+                b'GET', 'http://localhost:8080/page',
+            )
+            self.assertEqual(dict(headers)[b'transfer-encoding'], b'chunked')
+            response_data = b''
+            async for body_bytes in body:
+                response_data += body_bytes
+            response_datas.append(response_data)
+
+        self.assertEqual(response_datas, [data] * 26)
+
 
 class TestEndToEnd(unittest.TestCase):
 
