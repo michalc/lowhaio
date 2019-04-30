@@ -112,9 +112,13 @@ def Pool(
         unprocessed = b''
         while True:
             unprocessed += await recv(loop, sock, recv_bufsize)
-            header_end = unprocessed.index(b'\r\n\r\n')
-            if header_end != -1:
+            try:
+                header_end = unprocessed.index(b'\r\n\r\n')
+            except ValueError:
+                continue
+            else:
                 break
+
         header_bytes, unprocessed = unprocessed[:header_end], unprocessed[header_end + 4:]
         lines = header_bytes.split(b'\r\n')
         code = lines[0][9:12]

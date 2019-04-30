@@ -93,17 +93,20 @@ class TestIntegration(unittest.TestCase):
         request, close = Pool()
         self.add_async_cleanup(close)
 
-        for chunk_size in range(1, 27):
-            _, headers, body = await request(
-                b'GET', 'http://localhost:8080/page',
-            )
-            self.assertEqual(dict(headers)[b'transfer-encoding'], b'chunked')
-            response_data = b''
-            async for body_bytes in body:
-                response_data += body_bytes
-            response_datas.append(response_data)
+        for recv_bufsize in (1, 26, 16384):
+            request, close = Pool(recv_bufsize=recv_bufsize)
+            self.add_async_cleanup(close)
+            for chunk_size in range(1, 27):
+                _, headers, body = await request(
+                    b'GET', 'http://localhost:8080/page',
+                )
+                self.assertEqual(dict(headers)[b'transfer-encoding'], b'chunked')
+                response_data = b''
+                async for body_bytes in body:
+                    response_data += body_bytes
+                response_datas.append(response_data)
 
-        self.assertEqual(response_datas, [data] * 26)
+        self.assertEqual(response_datas, [data] * 26 * 3)
 
     @async_test
     async def test_http_identity_responses(self):
@@ -133,19 +136,20 @@ class TestIntegration(unittest.TestCase):
         site = web.TCPSite(runner, '0.0.0.0', 8080)
         await site.start()
 
-        request, close = Pool()
-        self.add_async_cleanup(close)
+        for recv_bufsize in (1, 26, 16384):
+            request, close = Pool(recv_bufsize=recv_bufsize)
+            self.add_async_cleanup(close)
 
-        for chunk_size in range(1, 27):
-            _, _, body = await request(
-                b'GET', 'http://localhost:8080/page',
-            )
-            response_data = b''
-            async for body_bytes in body:
-                response_data += body_bytes
-            response_datas.append(response_data)
+            for chunk_size in range(1, 27):
+                _, _, body = await request(
+                    b'GET', 'http://localhost:8080/page',
+                )
+                response_data = b''
+                async for body_bytes in body:
+                    response_data += body_bytes
+                response_datas.append(response_data)
 
-        self.assertEqual(response_datas, [data] * 26)
+        self.assertEqual(response_datas, [data] * 26 * 3)
 
 
 class TestEndToEnd(unittest.TestCase):
