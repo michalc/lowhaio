@@ -304,7 +304,8 @@ class TestEndToEnd(unittest.TestCase):
 
     @async_test
     async def test_http_get_small_via_ip_address(self):
-        request, _ = Pool()
+        request, close = Pool()
+        self.add_async_cleanup(close)
 
         async def data():
             yield b''

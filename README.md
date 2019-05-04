@@ -50,7 +50,7 @@ response = await buffered(body)
 
 The scope of the core functions is restricted to:
 
-- (TLS) connection opening, closing and pooling (pooling is planned);
+- (TLS) connection opening, closing and pooling;
 - passing and receiving HTTP headers and streaming bodies;
 - decoding chunked responses.
 

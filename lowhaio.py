@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import ipaddress
 import urllib.parse
 import ssl
@@ -40,6 +41,7 @@ def Pool(
         recv_bufsize=16384,
         transfer_encoding_handler=identity_or_chunked_handler,
         get_sock=get_sock_default,
+        keep_alive_timeout=15,
 ):
 
     loop = \
@@ -48,40 +50,93 @@ def Pool(
     ssl_context = ssl_context()
     dns_resolve, dns_resolver_clear_cache = dns_resolver()
 
+    pool = {}
+    close_callbacks = {}
+
     async def request(method, url, params=(), headers=(), body=streamed(b'')):
         parsed_url = urllib.parse.urlsplit(url)
 
-        sock = get_sock()
         try:
-            await connect(sock, parsed_url)
+            ip_addresses = (ipaddress.ip_address(parsed_url.hostname),)
+        except ValueError:
+            ip_addresses = await dns_resolve(parsed_url.hostname, TYPES.A)
 
-            if parsed_url.scheme == 'https':
-                sock = tls_wrapped(sock, parsed_url.hostname)
-                await tls_complete_handshake(loop, sock)
+        key = (parsed_url.scheme, parsed_url.netloc)
 
+        sock = get_from_pool(key)
+
+        if sock is None:
+            sock = get_sock()
+            try:
+                await connect(sock, parsed_url, str(ip_addresses[0]))
+
+                if parsed_url.scheme == 'https':
+                    sock = tls_wrapped(sock, parsed_url.hostname)
+                    await tls_complete_handshake(loop, sock)
+            except BaseException:
+                sock.close()
+                raise
+
+        try:
             await send_header(sock, method, parsed_url, params, headers)
             await send_body(sock, body)
 
-            code, response_headers, body_handler, unprocessed = await recv_header(sock)
+            code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
             response_body = response_body_generator(sock, body_handler,
-                                                    response_headers, unprocessed)
+                                                    response_headers, unprocessed, key, connection)
         except BaseException:
             sock.close()
             raise
 
         return code, response_headers, response_body
 
-    async def connect(sock, parsed_url):
-        host, _, port_specified = parsed_url.netloc.partition(':')
+    def get_from_pool(key):
+        try:
+            socks = pool[key]
+        except KeyError:
+            return None
+
+        while socks:
+            _sock = socks.popleft()
+            close_callback = close_callbacks[_sock]
+            close_callback.cancel()
+            del close_callbacks[_sock]
+
+            if _sock.fileno() != -1:
+                return _sock
+
+        del pool[key]
+
+    def add_to_pool(key, sock):
+        try:
+            key_pool = pool[key]
+        except KeyError:
+            key_pool = collections.deque()
+            pool[key] = key_pool
+
+        key_pool.append(sock)
+        close_callbacks[sock] = loop.call_later(keep_alive_timeout, close_by_keep_alive_timeout,
+                                                key, sock)
+
+    def close_by_keep_alive_timeout(key, sock):
+        sock.close()
+        del close_callbacks[sock]
+
+        pool[key] = [
+            _sock
+            for _sock in pool[key]
+            if _sock != sock
+        ]
+        if not pool[key]:
+            del pool[key]
+
+    async def connect(sock, parsed_url, ip_address):
         scheme = parsed_url.scheme
+        _, _, port_specified = parsed_url.netloc.partition(':')
         port = \
             port_specified if port_specified != '' else \
             443 if scheme == 'https' else \
             80
-        try:
-            ip_address = str(ipaddress.ip_address(host))
-        except ValueError:
-            ip_address = str((await dns_resolve(host, TYPES.A))[0])
         address = (ip_address, port)
         await loop.sock_connect(sock, address)
 
@@ -122,33 +177,52 @@ def Pool(
         header_bytes, unprocessed = unprocessed[:header_end], unprocessed[header_end + 4:]
         lines = header_bytes.split(b'\r\n')
         code = lines[0][9:12]
+        version = lines[0][5:8]
         response_headers = tuple(
             (key.strip().lower(), value.strip())
             for line in lines[1:]
             for (key, _, value) in (line.partition(b':'),)
         )
-        transfer_encoding = dict(response_headers).get(b'transfer-encoding', b'identity')
+        headers_dict = dict(response_headers)
+        transfer_encoding = headers_dict.get(b'transfer-encoding', b'identity')
+        connection = \
+            b'close' if keep_alive_timeout == 0 else \
+            headers_dict.get(b'connection', b'keep-alive').lower() if version == b'1.1' else \
+            headers_dict.get(b'connection', b'close').lower()
         body_handler = transfer_encoding_handler(transfer_encoding)
 
-        return code, response_headers, body_handler, unprocessed
+        return code, response_headers, body_handler, unprocessed, connection
 
     async def send_body(sock, body):
         async for chunk in body:
             if chunk:
                 await sendall(loop, sock, chunk)
 
-    async def response_body_generator(sock, body_handler, response_headers, unprocessed):
+    async def response_body_generator(sock, body_handler, response_headers, unprocessed,
+                                      key, connection):
         try:
             generator = body_handler(loop, sock, recv_bufsize, response_headers, unprocessed)
             unprocessed = None  # So can be garbage collected
 
             async for chunk in generator:
                 yield chunk
-        finally:
+        except BaseException:
             sock.close()
+            raise
+        else:
+            if connection == b'keep-alive':
+                add_to_pool(key, sock)
+            else:
+                sock.close()
 
     async def close():
         dns_resolver_clear_cache()
+        for socks in pool.values():
+            for sock in socks:
+                close_callbacks[sock].cancel()
+                sock.close()
+        pool.clear()
+        close_callbacks.clear()
 
     return request, close
 
