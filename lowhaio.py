@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import ipaddress
 import urllib.parse
 import ssl
@@ -48,6 +49,8 @@ def Pool(
     ssl_context = ssl_context()
     dns_resolve, dns_resolver_clear_cache = dns_resolver()
 
+    pool = {}
+
     async def request(method, url, params=(), headers=(), body=streamed(b'')):
         parsed_url = urllib.parse.urlsplit(url)
 
@@ -56,29 +59,56 @@ def Pool(
         except ValueError:
             ip_addresses = await dns_resolve(parsed_url.hostname, TYPES.A)
 
-        sock = get_sock()
-        try:
-            await connect(sock, parsed_url, str(ip_addresses[0]))
+        key = (parsed_url.scheme, parsed_url.netloc)
 
-            if parsed_url.scheme == 'https':
-                sock = tls_wrapped(sock, parsed_url.hostname)
-                await tls_complete_handshake(loop, sock)
-        except BaseException:
-            sock.close()
-            raise
+        sock = get_from_pool(key)
+
+        if sock is None:
+            sock = get_sock()
+            try:
+                await connect(sock, parsed_url, str(ip_addresses[0]))
+
+                if parsed_url.scheme == 'https':
+                    sock = tls_wrapped(sock, parsed_url.hostname)
+                    await tls_complete_handshake(loop, sock)
+            except BaseException:
+                sock.close()
+                raise
 
         try:
             await send_header(sock, method, parsed_url, params, headers)
             await send_body(sock, body)
 
-            code, response_headers, body_handler, unprocessed, _ = await recv_header(sock)
+            code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
             response_body = response_body_generator(sock, body_handler,
-                                                    response_headers, unprocessed)
+                                                    response_headers, unprocessed, key, connection)
         except BaseException:
             sock.close()
             raise
 
         return code, response_headers, response_body
+
+    def get_from_pool(key):
+        try:
+            socks = pool[key]
+        except KeyError:
+            return None
+
+        while socks:
+            _sock = socks.popleft()
+            if _sock.fileno() != -1:
+                return _sock
+
+        del pool[key]
+
+    def add_to_pool(key, sock):
+        try:
+            key_pool = pool[key]
+        except KeyError:
+            key_pool = collections.deque()
+            pool[key] = key_pool
+
+        key_pool.append(sock)
 
     async def connect(sock, parsed_url, ip_address):
         scheme = parsed_url.scheme
@@ -147,18 +177,29 @@ def Pool(
             if chunk:
                 await sendall(loop, sock, chunk)
 
-    async def response_body_generator(sock, body_handler, response_headers, unprocessed):
+    async def response_body_generator(sock, body_handler, response_headers, unprocessed,
+                                      key, connection):
         try:
             generator = body_handler(loop, sock, recv_bufsize, response_headers, unprocessed)
             unprocessed = None  # So can be garbage collected
 
             async for chunk in generator:
                 yield chunk
-        finally:
+        except BaseException:
             sock.close()
+            raise
+        else:
+            if connection == b'keep-alive':
+                add_to_pool(key, sock)
+            else:
+                sock.close()
 
     async def close():
         dns_resolver_clear_cache()
+        for socks in pool.values():
+            for sock in socks:
+                sock.close()
+        pool.clear()
 
     return request, close
 
