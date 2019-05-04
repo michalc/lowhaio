@@ -71,7 +71,7 @@ def Pool(
             await send_header(sock, method, parsed_url, params, headers)
             await send_body(sock, body)
 
-            code, response_headers, body_handler, unprocessed = await recv_header(sock)
+            code, response_headers, body_handler, unprocessed, _ = await recv_header(sock)
             response_body = response_body_generator(sock, body_handler,
                                                     response_headers, unprocessed)
         except BaseException:
@@ -127,15 +127,20 @@ def Pool(
         header_bytes, unprocessed = unprocessed[:header_end], unprocessed[header_end + 4:]
         lines = header_bytes.split(b'\r\n')
         code = lines[0][9:12]
+        version = lines[0][5:8]
         response_headers = tuple(
             (key.strip().lower(), value.strip())
             for line in lines[1:]
             for (key, _, value) in (line.partition(b':'),)
         )
-        transfer_encoding = dict(response_headers).get(b'transfer-encoding', b'identity')
+        headers_dict = dict(response_headers)
+        transfer_encoding = headers_dict.get(b'transfer-encoding', b'identity')
+        connection = \
+            headers_dict.get(b'connection', b'keep-alive') if version == b'1.1' else \
+            headers_dict.get(b'connection', b'close')
         body_handler = transfer_encoding_handler(transfer_encoding)
 
-        return code, response_headers, body_handler, unprocessed
+        return code, response_headers, body_handler, unprocessed, connection
 
     async def send_body(sock, body):
         async for chunk in body:
