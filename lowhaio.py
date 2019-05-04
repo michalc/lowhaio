@@ -166,8 +166,8 @@ def Pool(
         headers_dict = dict(response_headers)
         transfer_encoding = headers_dict.get(b'transfer-encoding', b'identity')
         connection = \
-            headers_dict.get(b'connection', b'keep-alive') if version == b'1.1' else \
-            headers_dict.get(b'connection', b'close')
+            headers_dict.get(b'connection', b'keep-alive').lower() if version == b'1.1' else \
+            headers_dict.get(b'connection', b'close').lower()
         body_handler = transfer_encoding_handler(transfer_encoding)
 
         return code, response_headers, body_handler, unprocessed, connection
