@@ -41,6 +41,7 @@ def Pool(
         recv_bufsize=16384,
         transfer_encoding_handler=identity_or_chunked_handler,
         get_sock=get_sock_default,
+        keep_alive_timeout=15,
 ):
 
     loop = \
@@ -50,6 +51,7 @@ def Pool(
     dns_resolve, dns_resolver_clear_cache = dns_resolver()
 
     pool = {}
+    close_callbacks = {}
 
     async def request(method, url, params=(), headers=(), body=streamed(b'')):
         parsed_url = urllib.parse.urlsplit(url)
@@ -96,6 +98,10 @@ def Pool(
 
         while socks:
             _sock = socks.popleft()
+            close_callback = close_callbacks[_sock]
+            close_callback.cancel()
+            del close_callbacks[_sock]
+
             if _sock.fileno() != -1:
                 return _sock
 
@@ -109,6 +115,20 @@ def Pool(
             pool[key] = key_pool
 
         key_pool.append(sock)
+        close_callbacks[sock] = loop.call_later(keep_alive_timeout, close_by_keep_alive_timeout,
+                                                key, sock)
+
+    def close_by_keep_alive_timeout(key, sock):
+        sock.close()
+        del close_callbacks[sock]
+
+        pool[key] = [
+            _sock
+            for _sock in pool[key]
+            if _sock != sock
+        ]
+        if not pool[key]:
+            del pool[key]
 
     async def connect(sock, parsed_url, ip_address):
         scheme = parsed_url.scheme
@@ -198,8 +218,10 @@ def Pool(
         dns_resolver_clear_cache()
         for socks in pool.values():
             for sock in socks:
+                close_callbacks[sock].cancel()
                 sock.close()
         pool.clear()
+        close_callbacks.clear()
 
     return request, close
 
