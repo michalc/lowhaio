@@ -303,6 +303,7 @@ async def sendall(loop, sock, data):
         except (BlockingIOError, ssl.SSLWantWriteError):
             pass
         except BaseException as exception:
+            loop.remove_writer(fileno)
             if not result.done():
                 result.set_exception(exception)
         else:
@@ -342,6 +343,7 @@ async def _recv(loop, sock, recv_bufsize):
         except (BlockingIOError, ssl.SSLWantReadError):
             pass
         except BaseException as exception:
+            loop.remove_reader(fileno)
             if not result.done():
                 result.set_exception(exception)
         else:
@@ -370,6 +372,8 @@ async def tls_complete_handshake(loop, ssl_sock):
         except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
             pass
         except BaseException as exception:
+            loop.remove_reader(fileno)
+            loop.remove_writer(fileno)
             if not done.done():
                 done.set_exception(exception)
         else:
