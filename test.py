@@ -3,6 +3,7 @@ import hashlib
 import itertools
 import json
 import unittest
+import ssl
 
 from aiohttp import web
 
@@ -151,6 +152,29 @@ class TestIntegration(unittest.TestCase):
                 response_datas.append(response_data)
 
         self.assertEqual(response_datas, [data] * 26 * 3 * 2)
+
+    @async_test
+    async def test_ssl_self_signed_fails_by_default(self):
+        loop = asyncio.get_event_loop()
+
+        def handler(_, __):
+            pass
+        loop.set_exception_handler(handler)
+
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+        ssl_context.load_cert_chain('public.crt', keyfile='private.key')
+        app = web.Application()
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.add_async_cleanup(runner.cleanup)
+        site = web.TCPSite(runner, '0.0.0.0', 8080, ssl_context=ssl_context)
+        await site.start()
+
+        request, close = Pool()
+        self.add_async_cleanup(close)
+        with self.assertRaises(ssl.SSLError):
+            await request(b'GET', 'https://localhost:8080/page')
 
 
 class TestEndToEnd(unittest.TestCase):

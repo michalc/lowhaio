@@ -40,6 +40,7 @@ jobs:
       - run:
           name: Run tests
           command: |
+            ./create_certs.sh
             python -m setup test -v
   test-3.7.1:
     <<: *template
