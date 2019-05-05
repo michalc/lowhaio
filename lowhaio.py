@@ -82,7 +82,11 @@ def Pool(
             sock = get_sock()
             try:
                 await connect(sock, parsed_url, str(ip_addresses[0]))
+            except BaseException:
+                sock.close()
+                raise
 
+            try:
                 if parsed_url.scheme == 'https':
                     sock = tls_wrapped(sock, parsed_url.hostname)
                     await tls_complete_handshake(loop, sock, socket_timeout)
