@@ -11,6 +11,17 @@ from aiodnsresolver import (
 )
 
 
+class EmptyAsyncGenerator():
+
+    __slots__ = ()
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise StopAsyncIteration()
+
+
 def streamed(data):
     async def _streamed():
         yield data
@@ -53,7 +64,7 @@ def Pool(
     pool = {}
     close_callbacks = {}
 
-    async def request(method, url, params=(), headers=(), body=streamed(b'')):
+    async def request(method, url, params=(), headers=(), body=EmptyAsyncGenerator()):
         parsed_url = urllib.parse.urlsplit(url)
 
         try:
@@ -195,8 +206,7 @@ def Pool(
 
     async def send_body(sock, body):
         async for chunk in body:
-            if chunk:
-                await sendall(loop, sock, chunk)
+            await sendall(loop, sock, chunk)
 
     async def response_body_generator(sock, body_handler, response_headers, unprocessed,
                                       key, connection):
