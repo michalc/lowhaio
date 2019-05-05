@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import itertools
 import json
 import unittest
 
@@ -93,8 +94,8 @@ class TestIntegration(unittest.TestCase):
         request, close = Pool()
         self.add_async_cleanup(close)
 
-        for recv_bufsize in (1, 26, 16384):
-            request, close = Pool(recv_bufsize=recv_bufsize)
+        for recv_bufsize, keep_alive_timeout in itertools.product((1, 26, 16384), (0, 15)):
+            request, close = Pool(recv_bufsize=recv_bufsize, keep_alive_timeout=keep_alive_timeout)
             self.add_async_cleanup(close)
             for chunk_size in range(1, 27):
                 _, headers, body = await request(
@@ -106,7 +107,7 @@ class TestIntegration(unittest.TestCase):
                     response_data += body_bytes
                 response_datas.append(response_data)
 
-        self.assertEqual(response_datas, [data] * 26 * 3)
+        self.assertEqual(response_datas, [data] * 26 * 3 * 2)
 
     @async_test
     async def test_http_identity_responses(self):
@@ -136,8 +137,8 @@ class TestIntegration(unittest.TestCase):
         site = web.TCPSite(runner, '0.0.0.0', 8080)
         await site.start()
 
-        for recv_bufsize in (1, 26, 16384):
-            request, close = Pool(recv_bufsize=recv_bufsize)
+        for recv_bufsize, keep_alive_timeout in itertools.product((1, 26, 16384), (0, 15)):
+            request, close = Pool(recv_bufsize=recv_bufsize, keep_alive_timeout=keep_alive_timeout)
             self.add_async_cleanup(close)
 
             for chunk_size in range(1, 27):
@@ -149,7 +150,7 @@ class TestIntegration(unittest.TestCase):
                     response_data += body_bytes
                 response_datas.append(response_data)
 
-        self.assertEqual(response_datas, [data] * 26 * 3)
+        self.assertEqual(response_datas, [data] * 26 * 3 * 2)
 
 
 class TestEndToEnd(unittest.TestCase):
