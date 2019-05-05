@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import collections
 import ipaddress
 import urllib.parse
@@ -53,6 +54,7 @@ def Pool(
         transfer_encoding_handler=identity_or_chunked_handler,
         get_sock=get_sock_default,
         keep_alive_timeout=15,
+        socket_timeout=10,
 ):
 
     loop = \
@@ -83,7 +85,7 @@ def Pool(
 
                 if parsed_url.scheme == 'https':
                     sock = tls_wrapped(sock, parsed_url.hostname)
-                    await tls_complete_handshake(loop, sock)
+                    await tls_complete_handshake(loop, sock, socket_timeout)
             except BaseException:
                 sock.close()
                 raise
@@ -93,7 +95,7 @@ def Pool(
             await send_body(sock, body)
 
             code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
-            response_body = response_body_generator(sock, body_handler,
+            response_body = response_body_generator(sock, socket_timeout, body_handler,
                                                     response_headers, unprocessed, key, connection)
         except BaseException:
             sock.close()
@@ -172,12 +174,12 @@ def Pool(
                 for (key, value) in headers_with_host
             ) + \
             b'\r\n'
-        await sendall(loop, sock, header)
+        await sendall(loop, sock, socket_timeout, header)
 
     async def recv_header(sock):
         unprocessed = b''
         while True:
-            unprocessed += await recv(loop, sock, recv_bufsize)
+            unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
             try:
                 header_end = unprocessed.index(b'\r\n\r\n')
             except ValueError:
@@ -206,12 +208,13 @@ def Pool(
 
     async def send_body(sock, body):
         async for chunk in body:
-            await sendall(loop, sock, chunk)
+            await sendall(loop, sock, socket_timeout, chunk)
 
-    async def response_body_generator(sock, body_handler, response_headers, unprocessed,
-                                      key, connection):
+    async def response_body_generator(sock, socket_timeout, body_handler, response_headers,
+                                      unprocessed, key, connection):
         try:
-            generator = body_handler(loop, sock, recv_bufsize, response_headers, unprocessed)
+            generator = body_handler(loop, sock, socket_timeout, recv_bufsize,
+                                     response_headers, unprocessed)
             unprocessed = None  # So can be garbage collected
 
             async for chunk in generator:
@@ -237,7 +240,8 @@ def Pool(
     return request, close
 
 
-async def identity_handler(loop, sock, recv_bufsize, response_headers, unprocessed):
+async def identity_handler(loop, sock, socket_timeout, recv_bufsize,
+                           response_headers, unprocessed):
     total_remaining = int(dict(response_headers).get(b'content-length', 0))
 
     if unprocessed and total_remaining:
@@ -246,16 +250,16 @@ async def identity_handler(loop, sock, recv_bufsize, response_headers, unprocess
 
     while total_remaining:
         unprocessed = None  # So can be garbage collected
-        unprocessed = await recv(loop, sock, min(recv_bufsize, total_remaining))
+        unprocessed = await recv(loop, sock, socket_timeout, min(recv_bufsize, total_remaining))
         total_remaining -= len(unprocessed)
         yield unprocessed
 
 
-async def chunked_handler(loop, sock, recv_bufsize, _, unprocessed):
+async def chunked_handler(loop, sock, socket_timeout, recv_bufsize, _, unprocessed):
     while True:
         # Fetch until have chunk header
         while b'\r\n' not in unprocessed:
-            unprocessed += await recv(loop, sock, recv_bufsize)
+            unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
 
         # Find chunk length
         chunk_header_end = unprocessed.index(b'\r\n')
@@ -280,7 +284,7 @@ async def chunked_handler(loop, sock, recv_bufsize, _, unprocessed):
 
         # Fetch and yield rest of chunk
         while chunk_remaining:
-            unprocessed += await recv(loop, sock, recv_bufsize)
+            unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
             in_chunk, unprocessed = \
                 unprocessed[:chunk_remaining], unprocessed[chunk_remaining:]
             chunk_remaining -= len(in_chunk)
@@ -288,11 +292,11 @@ async def chunked_handler(loop, sock, recv_bufsize, _, unprocessed):
 
         # Fetch until have chunk footer, and remove
         while len(unprocessed) < 2:
-            unprocessed += await recv(loop, sock, recv_bufsize)
+            unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
         unprocessed = unprocessed[2:]
 
 
-async def sendall(loop, sock, data):
+async def sendall(loop, sock, socket_timeout, data):
     try:
         latest_num_bytes = sock.send(data)
     except (BlockingIOError, ssl.SSLWantWriteError):
@@ -329,19 +333,20 @@ async def sendall(loop, sock, data):
     data_memoryview = memoryview(data)
 
     try:
-        return await result
+        with timeout(socket_timeout):
+            return await result
     finally:
         loop.remove_writer(fileno)
 
 
-async def recv(loop, sock, recv_bufsize):
-    incoming = await _recv(loop, sock, recv_bufsize)
+async def recv(loop, sock, socket_timeout, recv_bufsize):
+    incoming = await _recv(loop, sock, socket_timeout, recv_bufsize)
     if not incoming:
         raise IOError()
     return incoming
 
 
-async def _recv(loop, sock, recv_bufsize):
+async def _recv(loop, sock, socket_timeout, recv_bufsize):
     try:
         return sock.recv(recv_bufsize)
     except (BlockingIOError, ssl.SSLWantReadError):
@@ -365,12 +370,13 @@ async def _recv(loop, sock, recv_bufsize):
     loop.add_reader(fileno, reader)
 
     try:
-        return await result
+        with timeout(socket_timeout):
+            return await result
     finally:
         loop.remove_reader(fileno)
 
 
-async def tls_complete_handshake(loop, ssl_sock):
+async def tls_complete_handshake(loop, ssl_sock, socket_timeout):
     try:
         return ssl_sock.do_handshake()
     except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
@@ -396,7 +402,37 @@ async def tls_complete_handshake(loop, ssl_sock):
     loop.add_writer(fileno, handshake)
 
     try:
-        return await done
+        with timeout(socket_timeout):
+            return await done
     finally:
         loop.remove_reader(fileno)
         loop.remove_writer(fileno)
+
+
+@contextlib.contextmanager
+def timeout(max_time):
+
+    cancelling_due_to_timeout = False
+    current_task = \
+        asyncio.current_task() if hasattr(asyncio, 'current_task') else \
+        asyncio.Task.current_task()
+    loop = \
+        asyncio.get_running_loop() if hasattr(asyncio, 'get_running_loop') else \
+        asyncio.get_event_loop()
+
+    def cancel():
+        nonlocal cancelling_due_to_timeout
+        cancelling_due_to_timeout = True
+        current_task.cancel()
+
+    handle = loop.call_later(max_time, cancel)
+
+    try:
+        yield
+    except asyncio.CancelledError:
+        if cancelling_due_to_timeout:
+            raise asyncio.TimeoutError()
+        raise
+
+    finally:
+        handle.cancel()
