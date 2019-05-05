@@ -315,12 +315,7 @@ class TestEndToEnd(unittest.TestCase):
         request, close = Pool()
         self.add_async_cleanup(close)
 
-        async def data():
-            yield b''
-
-        _, _, body = await request(
-            b'GET', 'http://www.ovh.net/files/1Mio.dat', (), (), data(),
-        )
+        _, _, body = await request(b'GET', 'http://www.ovh.net/files/1Mio.dat')
         m = hashlib.md5()
         async for chunk in body:
             m.update(chunk)
@@ -332,12 +327,7 @@ class TestEndToEnd(unittest.TestCase):
         request, close = Pool()
         self.add_async_cleanup(close)
 
-        async def data():
-            yield b''
-
-        _, _, body = await request(
-            b'GET', 'http://212.183.159.230/5MB.zip', (), (), data(),
-        )
+        _, _, body = await request(b'GET', 'http://212.183.159.230/5MB.zip')
         m = hashlib.md5()
         async for chunk in body:
             m.update(chunk)
