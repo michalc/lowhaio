@@ -68,4 +68,5 @@ This is to make the core behaviour useful to a reasonable range of uses, but to 
 - retrying failed requests;
 - cookies;
 - compressing/decompressing requests/responses;
+- encoding chunked requests;
 - authentication.
