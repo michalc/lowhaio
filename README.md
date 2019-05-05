@@ -46,6 +46,13 @@ response = await buffered(body)
 ```
 
 
+## Exceptions
+
+Exceptions raised are subclasses of `HttpError`. If a lower-level exception caused this, it is set in the `__cause__` attribute of the `HttpError`
+
+Exceptions before any data is sent are instances of `HttpConnectionError`, and after data is sent, `HttpDataError`. This is to make it possible to know if non-idempotent requests can be retried.
+
+
 ## Scope
 
 The scope of the core functions is restricted to:

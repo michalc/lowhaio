@@ -13,6 +13,8 @@ from aiohttp import (
 )
 
 from lowhaio import (
+    HttpDataError,
+    HttpTlsError,
     Pool,
     buffered,
     streamed,
@@ -179,8 +181,10 @@ class TestIntegration(unittest.TestCase):
 
         request, close = Pool()
         self.add_async_cleanup(close)
-        with self.assertRaises(ssl.SSLError):
+        with self.assertRaises(HttpTlsError) as cm:
             await request(b'GET', 'https://localhost:8080/page')
+
+        self.assertIsInstance(cm.exception.__cause__, ssl.SSLError)
 
     @async_test
     async def test_http_timeout(self):
@@ -206,11 +210,12 @@ class TestIntegration(unittest.TestCase):
             self.add_async_cleanup(close)
 
             request = asyncio.ensure_future(request(b'GET', 'http://localhost:8080/page'))
-            with self.assertRaises(asyncio.TimeoutError):
+            with self.assertRaises(HttpDataError) as cm:
                 at_10 = forward(10)
                 await request
 
             await at_10
+        self.assertIsInstance(cm.exception.__cause__, asyncio.TimeoutError)
 
 
 class TestEndToEnd(unittest.TestCase):

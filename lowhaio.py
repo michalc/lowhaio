@@ -8,8 +8,29 @@ import socket
 
 from aiodnsresolver import (
     TYPES,
+    DnsError,
     Resolver,
 )
+
+
+class HttpError(Exception):
+    pass
+
+
+class HttpDnsError(HttpError):
+    pass
+
+
+class HttpConnectionError(HttpError):
+    pass
+
+
+class HttpTlsError(HttpConnectionError):
+    pass
+
+
+class HttpDataError(HttpError):
+    pass
 
 
 class EmptyAsyncGenerator():
@@ -72,7 +93,10 @@ def Pool(
         try:
             ip_addresses = (ipaddress.ip_address(parsed_url.hostname),)
         except ValueError:
-            ip_addresses = await dns_resolve(parsed_url.hostname, TYPES.A)
+            try:
+                ip_addresses = await dns_resolve(parsed_url.hostname, TYPES.A)
+            except DnsError as exception:
+                raise HttpDnsError() from exception
 
         key = (parsed_url.scheme, parsed_url.netloc)
 
@@ -82,6 +106,9 @@ def Pool(
             sock = get_sock()
             try:
                 await connect(sock, parsed_url, str(ip_addresses[0]))
+            except Exception as exception:
+                sock.close()
+                raise HttpConnectionError() from exception
             except BaseException:
                 sock.close()
                 raise
@@ -90,6 +117,9 @@ def Pool(
                 if parsed_url.scheme == 'https':
                     sock = tls_wrapped(sock, parsed_url.hostname)
                     await tls_complete_handshake(loop, sock, socket_timeout)
+            except Exception as exception:
+                sock.close()
+                raise HttpTlsError() from exception
             except BaseException:
                 sock.close()
                 raise
@@ -101,6 +131,9 @@ def Pool(
             code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
             response_body = response_body_generator(sock, socket_timeout, body_handler,
                                                     response_headers, unprocessed, key, connection)
+        except Exception as exception:
+            sock.close()
+            raise HttpDataError() from exception
         except BaseException:
             sock.close()
             raise
