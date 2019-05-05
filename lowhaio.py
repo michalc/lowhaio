@@ -305,6 +305,8 @@ async def chunked_handler(loop, sock, socket_timeout, recv_bufsize, _, unprocess
 
         # End of body signalled by a 0-length chunk
         if chunk_length == 0:
+            while b'\r\n\r\n' not in unprocessed:
+                unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
             break
 
         # Remove chunk header
