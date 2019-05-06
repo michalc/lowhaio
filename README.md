@@ -3,6 +3,13 @@
 A lightweight Python asyncio HTTP/1.1 client. No additional tasks are created; all code is in a single module; and other than the standard library only a single dependency is required, [aiodnsresolver](https://github.com/michalc/aiodnsresolver).
 
 
+## Installation
+
+```bash
+pip install lowhaio
+```
+
+
 ## Usage
 
 The API is streaming-first: for both request and response bodies, asynchronous generators are used.
