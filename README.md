@@ -75,5 +75,5 @@ This is to make the core behaviour useful to a reasonable range of uses, but to 
 - retrying failed requests;
 - cookies;
 - compressing/decompressing requests/responses;
-- encoding chunked requests;
+- [encoding chunked requests](https://github.com/michalc/lowhaio-chunked);
 - authentication.
