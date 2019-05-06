@@ -362,8 +362,10 @@ async def sendall(loop, sock, socket_timeout, data):
         else:
             total_num_bytes += latest_num_bytes
             if latest_num_bytes == 0 and not result.done():
+                loop.remove_writer(fileno)
                 result.set_exception(IOError())
             elif total_num_bytes == len(data) and not result.done():
+                loop.remove_writer(fileno)
                 result.set_result(None)
 
     result = asyncio.Future()
@@ -401,6 +403,7 @@ async def _recv(loop, sock, socket_timeout, recv_bufsize):
             if not result.done():
                 result.set_exception(exception)
         else:
+            loop.remove_reader(fileno)
             if not result.done():
                 result.set_result(chunk)
 
@@ -432,6 +435,8 @@ async def tls_complete_handshake(loop, ssl_sock, socket_timeout):
             if not done.done():
                 done.set_exception(exception)
         else:
+            loop.remove_reader(fileno)
+            loop.remove_writer(fileno)
             if not done.done():
                 done.set_result(None)
 
