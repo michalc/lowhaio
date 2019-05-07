@@ -29,7 +29,7 @@ async def file_data():
 
 code, headers, body = await request(
     b'POST', 'https://example.com/path',
-    params=(), headers=((b'content-length': content_length),), body=file_data(),
+    params=(), headers=((b'content-length': content_length),), body=file_data,
 )
 async for chunk in body:
     print(chunk)

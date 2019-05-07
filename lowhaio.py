@@ -33,7 +33,7 @@ class HttpDataError(HttpError):
     pass
 
 
-class EmptyAsyncGenerator():
+class EmptyAsyncIterator():
 
     __slots__ = ()
 
@@ -47,7 +47,7 @@ class EmptyAsyncGenerator():
 def streamed(data):
     async def _streamed():
         yield data
-    return _streamed()
+    return _streamed
 
 
 async def buffered(data):
@@ -87,7 +87,7 @@ def Pool(
     pool = {}
     close_callbacks = {}
 
-    async def request(method, url, params=(), headers=(), body=EmptyAsyncGenerator()):
+    async def request(method, url, params=(), headers=(), body=EmptyAsyncIterator):
         parsed_url = urllib.parse.urlsplit(url)
 
         try:
@@ -244,7 +244,7 @@ def Pool(
         return code, response_headers, body_handler, unprocessed, connection
 
     async def send_body(sock, body):
-        async for chunk in body:
+        async for chunk in body():
             await sendall(loop, sock, socket_timeout, chunk)
 
     async def response_body_generator(sock, socket_timeout, body_handler, response_headers,

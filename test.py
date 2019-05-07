@@ -66,7 +66,7 @@ class TestIntegration(unittest.TestCase):
         _, _, body = await request(
             b'POST', 'http://localhost:8080/page', (), (
                 (b'content-length', content_length),
-            ), data(),
+            ), data,
         )
         async for _ in body:
             pass
@@ -236,7 +236,7 @@ class TestEndToEnd(unittest.TestCase):
             b'POST', 'http://postman-echo.com/post', (), (
                 (b'content-length', b'19'),
                 (b'content-type', b'application/x-www-form-urlencoded'),
-            ), data(),
+            ), data,
         )
         body_bytes = b''
         async for chunk in body:
@@ -335,7 +335,7 @@ class TestEndToEnd(unittest.TestCase):
                 (b'content-length', b'19'),
                 (b'content-type', b'application/x-www-form-urlencoded'),
             ),
-            body=data(),
+            body=data,
         )
         body_bytes = b''
         async for chunk in body:
