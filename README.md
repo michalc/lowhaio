@@ -12,7 +12,7 @@ pip install lowhaio
 
 ## Usage
 
-The API is streaming-first: for both request and response bodies, asynchronous generators are used.
+The API is streaming-first: for both request and response bodies, asynchronous iterators are used.
 
 ```python
 import os
