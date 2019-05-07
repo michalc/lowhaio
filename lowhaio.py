@@ -87,7 +87,7 @@ def Pool(
     pool = {}
     close_callbacks = {}
 
-    async def request(method, url, params=(), headers=(), body=EmptyAsyncIterator):
+    async def request(method, url, params=(), headers=(), body=EmptyAsyncIterator, **body_kwargs):
         parsed_url = urllib.parse.urlsplit(url)
 
         try:
@@ -126,7 +126,7 @@ def Pool(
 
         try:
             await send_header(sock, method, parsed_url, params, headers)
-            await send_body(sock, body)
+            await send_body(sock, body, body_kwargs)
 
             code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
             response_body = response_body_generator(sock, socket_timeout, body_handler,
@@ -243,8 +243,8 @@ def Pool(
 
         return code, response_headers, body_handler, unprocessed, connection
 
-    async def send_body(sock, body):
-        async for chunk in body():
+    async def send_body(sock, body, body_kwargs):
+        async for chunk in body(**body_kwargs):
             await sendall(loop, sock, socket_timeout, chunk)
 
     async def response_body_generator(sock, socket_timeout, body_handler, response_headers,
