@@ -64,6 +64,7 @@ def identity_or_chunked_handler(transfer_encoding):
 def get_sock_default():
     sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM,
                          proto=socket.IPPROTO_TCP)
+    sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
     sock.setblocking(False)
     return sock
 
