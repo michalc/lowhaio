@@ -57,9 +57,9 @@ class TestIntegration(unittest.TestCase):
 
         async def data():
             for _ in range(10):
-                yield b'-' * 1000000
+                yield b'abc' * 1000000
 
-        content_length = str(1000000 * 10).encode()
+        content_length = str(1000000 * 10 * 3).encode()
 
         request, close = Pool()
         self.add_async_cleanup(close)
@@ -70,7 +70,7 @@ class TestIntegration(unittest.TestCase):
         )
         async for _ in body:
             pass
-        self.assertEqual(posted_data_received, b'-' * 1000000 * 10)
+        self.assertEqual(posted_data_received, b'abc' * 1000000 * 10)
 
     @async_test
     async def test_http_chunked_responses(self):
