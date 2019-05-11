@@ -127,8 +127,8 @@ def Pool(
                 raise
 
         try:
-            await send_header(sock, method, parsed_url, params, headers)
-            await send_body(sock, body, body_args, body_kwargs)
+            header = get_header(method, parsed_url, params, headers)
+            await send_response(sock, header, body, body_args, body_kwargs)
 
             code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
             response_body = response_body_generator(sock, socket_timeout, body_handler,
@@ -197,7 +197,7 @@ def Pool(
                                        server_hostname=host,
                                        do_handshake_on_connect=False)
 
-    async def send_header(sock, method, parsed_url, params, headers):
+    def get_header(method, parsed_url, params, headers):
         outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
         outgoing_path = urllib.parse.quote(parsed_url.path).encode()
         outgoing_path_qs = outgoing_path + \
@@ -206,14 +206,13 @@ def Pool(
         headers_with_host = \
             headers if host_specified else \
             ((b'host', parsed_url.hostname.encode('idna')),) + headers
-        header = \
+        return \
             method + b' ' + outgoing_path_qs + b' HTTP/1.1\r\n' + \
             b''.join(
                 key + b':' + value + b'\r\n'
                 for (key, value) in headers_with_host
             ) + \
             b'\r\n'
-        await sendall(loop, sock, socket_timeout, header)
 
     async def recv_header(sock):
         unprocessed = b''
@@ -245,9 +244,14 @@ def Pool(
 
         return code, response_headers, body_handler, unprocessed, connection
 
-    async def send_body(sock, body, body_args, body_kwargs):
+    async def send_response(sock, header, body, body_args, body_kwargs):
+        header_sent = False
         async for chunk in body(*body_args, **dict(body_kwargs)):
-            await sendall(loop, sock, socket_timeout, chunk)
+            to_send = chunk if header_sent else header + chunk
+            header_sent = True
+            await sendall(loop, sock, socket_timeout, to_send)
+        else:
+            await sendall(loop, sock, socket_timeout, header)
 
     async def response_body_generator(sock, socket_timeout, body_handler, response_headers,
                                       unprocessed, key, connection):
