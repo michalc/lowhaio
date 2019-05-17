@@ -33,6 +33,10 @@ class HttpDataError(HttpError):
     pass
 
 
+class HttpConnectionClosedError(HttpDataError):
+    pass
+
+
 class EmptyAsyncIterator():
 
     __slots__ = ()
@@ -348,7 +352,7 @@ async def sendall(loop, sock, socket_timeout, data):
         latest_num_bytes = 0
     else:
         if latest_num_bytes == 0:
-            raise IOError()
+            raise HttpConnectionClosedError()
 
     if latest_num_bytes == len(data):
         return
@@ -389,7 +393,7 @@ async def sendall(loop, sock, socket_timeout, data):
 async def recv(loop, sock, socket_timeout, recv_bufsize):
     incoming = await _recv(loop, sock, socket_timeout, recv_bufsize)
     if not incoming:
-        raise IOError()
+        raise HttpConnectionClosedError()
     return incoming
 
 
