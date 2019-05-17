@@ -81,6 +81,7 @@ def Pool(
         get_sock=get_sock_default,
         keep_alive_timeout=15,
         socket_timeout=10,
+        http_version=b'HTTP/1.1',
 ):
 
     loop = \
@@ -212,7 +213,7 @@ def Pool(
             headers if host_specified else \
             ((b'host', parsed_url.hostname.encode('idna')),) + headers
         return \
-            method + b' ' + outgoing_path_qs + b' HTTP/1.1\r\n' + \
+            method + b' ' + outgoing_path_qs + b' ' + http_version + b'\r\n' + \
             b''.join(
                 key + b':' + value + b'\r\n'
                 for (key, value) in headers_with_host
@@ -288,11 +289,23 @@ def Pool(
     return request, close
 
 
-async def identity_handler(loop, sock, socket_timeout, recv_bufsize,
-                           method, response_headers, unprocessed):
-    total_remaining = \
+def identity_handler(loop, sock, socket_timeout, recv_bufsize,
+                     method, response_headers, unprocessed):
+    response_headers_dict = dict(response_headers)
+    body_length = \
         0 if method == b'HEAD' else \
-        int(dict(response_headers).get(b'content-length', 0))
+        None if b'content-length' not in response_headers_dict else \
+        int(response_headers_dict[b'content-length'])
+    return \
+        identity_handler_known_body_length(
+            loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed) \
+        if body_length is not None else \
+        identity_handler_unknown_body_length(loop, sock, socket_timeout, recv_bufsize, unprocessed)
+
+
+async def identity_handler_known_body_length(
+        loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed):
+    total_remaining = body_length
 
     if unprocessed and total_remaining:
         total_remaining -= len(unprocessed)
@@ -303,6 +316,20 @@ async def identity_handler(loop, sock, socket_timeout, recv_bufsize,
         unprocessed = await recv(loop, sock, socket_timeout, min(recv_bufsize, total_remaining))
         total_remaining -= len(unprocessed)
         yield unprocessed
+
+
+async def identity_handler_unknown_body_length(
+        loop, sock, socket_timeout, recv_bufsize, unprocessed):
+    if unprocessed:
+        yield unprocessed
+
+    unprocessed = None  # So can be garbage collected
+
+    try:
+        while True:
+            yield await recv(loop, sock, socket_timeout, recv_bufsize)
+    except HttpConnectionClosedError:
+        pass
 
 
 async def chunked_handler(loop, sock, socket_timeout, recv_bufsize, _, __, unprocessed):
