@@ -136,7 +136,8 @@ def Pool(
 
             code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
             response_body = response_body_generator(sock, socket_timeout, body_handler,
-                                                    response_headers, unprocessed, key, connection)
+                                                    method, response_headers, unprocessed,
+                                                    key, connection)
         except Exception as exception:
             sock.close()
             raise HttpDataError() from exception
@@ -257,11 +258,11 @@ def Pool(
         else:
             await sendall(loop, sock, socket_timeout, header)
 
-    async def response_body_generator(sock, socket_timeout, body_handler, response_headers,
+    async def response_body_generator(sock, socket_timeout, body_handler, method, response_headers,
                                       unprocessed, key, connection):
         try:
             generator = body_handler(loop, sock, socket_timeout, recv_bufsize,
-                                     response_headers, unprocessed)
+                                     method, response_headers, unprocessed)
             unprocessed = None  # So can be garbage collected
 
             async for chunk in generator:
@@ -288,7 +289,7 @@ def Pool(
 
 
 async def identity_handler(loop, sock, socket_timeout, recv_bufsize,
-                           response_headers, unprocessed):
+                           _, response_headers, unprocessed):
     total_remaining = int(dict(response_headers).get(b'content-length', 0))
 
     if unprocessed and total_remaining:
@@ -302,7 +303,7 @@ async def identity_handler(loop, sock, socket_timeout, recv_bufsize,
         yield unprocessed
 
 
-async def chunked_handler(loop, sock, socket_timeout, recv_bufsize, _, unprocessed):
+async def chunked_handler(loop, sock, socket_timeout, recv_bufsize, _, __, unprocessed):
     while True:
         # Fetch until have chunk header
         while b'\r\n' not in unprocessed:
