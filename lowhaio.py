@@ -289,8 +289,10 @@ def Pool(
 
 
 async def identity_handler(loop, sock, socket_timeout, recv_bufsize,
-                           _, response_headers, unprocessed):
-    total_remaining = int(dict(response_headers).get(b'content-length', 0))
+                           method, response_headers, unprocessed):
+    total_remaining = \
+        0 if method == b'HEAD' else \
+        int(dict(response_headers).get(b'content-length', 0))
 
     if unprocessed and total_remaining:
         total_remaining -= len(unprocessed)
