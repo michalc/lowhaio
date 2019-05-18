@@ -199,9 +199,7 @@ def Pool(
         await loop.sock_connect(sock, address)
 
     def tls_wrapped(sock, host):
-        return ssl_context.wrap_socket(sock,
-                                       server_hostname=host,
-                                       do_handshake_on_connect=False)
+        return ssl_context.wrap_socket(sock, server_hostname=host, do_handshake_on_connect=False)
 
     def get_header(method, parsed_url, params, headers):
         outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
