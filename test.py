@@ -162,6 +162,52 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(response_datas, [data] * 26 * 3 * 2)
 
     @async_test
+    async def test_http_identity_close_no_content_length_responses(self):
+        response_datas = []
+
+        data = b'abcdefghijklmnopqrstuvwxyz'
+        chunk_size = None
+
+        async def handle_get(request):
+            await request.content.read()
+            response = web.StreamResponse()
+            response.force_close()
+            await response.prepare(request)
+
+            for chars in [data[i:i+chunk_size] for i in range(0, len(data), chunk_size)]:
+                await response.write(chars)
+                await asyncio.sleep(0)
+
+            return response
+
+        app = web.Application()
+        app.add_routes([
+            web.get('/page', handle_get)
+        ])
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.add_async_cleanup(runner.cleanup)
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+
+        combinations = itertools.product((1, 26, 16384), (b'close', b'keep-alive'), (0, 15))
+        for recv_bufsize, connection, keep_alive_timeout in combinations:
+            request, close = Pool(recv_bufsize=recv_bufsize, keep_alive_timeout=keep_alive_timeout,
+                                  http_version=b'HTTP/1.0')
+            self.add_async_cleanup(close)
+
+            for chunk_size in range(1, 27):
+                _, _, body = await request(
+                    b'GET', 'http://localhost:8080/page', headers=((b'connection', connection),),
+                )
+                response_data = b''
+                async for body_bytes in body:
+                    response_data += body_bytes
+                response_datas.append(response_data)
+
+        self.assertEqual(response_datas, [data] * 26 * 3 * 2 * 2)
+
+    @async_test
     async def test_ssl_self_signed_fails_by_default(self):
         loop = asyncio.get_event_loop()
 

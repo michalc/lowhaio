@@ -33,6 +33,10 @@ class HttpDataError(HttpError):
     pass
 
 
+class HttpConnectionClosedError(HttpDataError):
+    pass
+
+
 class EmptyAsyncIterator():
 
     __slots__ = ()
@@ -77,6 +81,7 @@ def Pool(
         get_sock=get_sock_default,
         keep_alive_timeout=15,
         socket_timeout=10,
+        http_version=b'HTTP/1.1',
 ):
 
     loop = \
@@ -132,7 +137,8 @@ def Pool(
 
             code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
             response_body = response_body_generator(sock, socket_timeout, body_handler,
-                                                    response_headers, unprocessed, key, connection)
+                                                    method, response_headers, unprocessed,
+                                                    key, connection)
         except Exception as exception:
             sock.close()
             raise HttpDataError() from exception
@@ -207,7 +213,7 @@ def Pool(
             headers if host_specified else \
             ((b'host', parsed_url.hostname.encode('idna')),) + headers
         return \
-            method + b' ' + outgoing_path_qs + b' HTTP/1.1\r\n' + \
+            method + b' ' + outgoing_path_qs + b' ' + http_version + b'\r\n' + \
             b''.join(
                 key + b':' + value + b'\r\n'
                 for (key, value) in headers_with_host
@@ -253,11 +259,11 @@ def Pool(
         else:
             await sendall(loop, sock, socket_timeout, header)
 
-    async def response_body_generator(sock, socket_timeout, body_handler, response_headers,
+    async def response_body_generator(sock, socket_timeout, body_handler, method, response_headers,
                                       unprocessed, key, connection):
         try:
             generator = body_handler(loop, sock, socket_timeout, recv_bufsize,
-                                     response_headers, unprocessed)
+                                     method, response_headers, unprocessed)
             unprocessed = None  # So can be garbage collected
 
             async for chunk in generator:
@@ -283,9 +289,23 @@ def Pool(
     return request, close
 
 
-async def identity_handler(loop, sock, socket_timeout, recv_bufsize,
-                           response_headers, unprocessed):
-    total_remaining = int(dict(response_headers).get(b'content-length', 0))
+def identity_handler(loop, sock, socket_timeout, recv_bufsize,
+                     method, response_headers, unprocessed):
+    response_headers_dict = dict(response_headers)
+    body_length = \
+        0 if method == b'HEAD' else \
+        None if b'content-length' not in response_headers_dict else \
+        int(response_headers_dict[b'content-length'])
+    return \
+        identity_handler_known_body_length(
+            loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed) \
+        if body_length is not None else \
+        identity_handler_unknown_body_length(loop, sock, socket_timeout, recv_bufsize, unprocessed)
+
+
+async def identity_handler_known_body_length(
+        loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed):
+    total_remaining = body_length
 
     if unprocessed and total_remaining:
         total_remaining -= len(unprocessed)
@@ -298,7 +318,21 @@ async def identity_handler(loop, sock, socket_timeout, recv_bufsize,
         yield unprocessed
 
 
-async def chunked_handler(loop, sock, socket_timeout, recv_bufsize, _, unprocessed):
+async def identity_handler_unknown_body_length(
+        loop, sock, socket_timeout, recv_bufsize, unprocessed):
+    if unprocessed:
+        yield unprocessed
+
+    unprocessed = None  # So can be garbage collected
+
+    try:
+        while True:
+            yield await recv(loop, sock, socket_timeout, recv_bufsize)
+    except HttpConnectionClosedError:
+        pass
+
+
+async def chunked_handler(loop, sock, socket_timeout, recv_bufsize, _, __, unprocessed):
     while True:
         # Fetch until have chunk header
         while b'\r\n' not in unprocessed:
@@ -348,7 +382,7 @@ async def sendall(loop, sock, socket_timeout, data):
         latest_num_bytes = 0
     else:
         if latest_num_bytes == 0:
-            raise IOError()
+            raise HttpConnectionClosedError()
 
     if latest_num_bytes == len(data):
         return
@@ -389,7 +423,7 @@ async def sendall(loop, sock, socket_timeout, data):
 async def recv(loop, sock, socket_timeout, recv_bufsize):
     incoming = await _recv(loop, sock, socket_timeout, recv_bufsize)
     if not incoming:
-        raise IOError()
+        raise HttpConnectionClosedError()
     return incoming
 
 
