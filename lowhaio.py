@@ -419,7 +419,7 @@ async def sendall(loop, sock, socket_timeout, data):
             total_num_bytes += latest_num_bytes
             if latest_num_bytes == 0 and not result.done():
                 loop.remove_writer(fileno)
-                result.set_exception(IOError())
+                result.set_exception(HttpConnectionClosedError())
             elif total_num_bytes == len(data) and not result.done():
                 loop.remove_writer(fileno)
                 result.set_result(None)
