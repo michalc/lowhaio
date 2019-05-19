@@ -238,8 +238,10 @@ class TestIntegration(unittest.TestCase):
         app = web.Application()
 
         bodies = iter([b'abcd', b'efgh', b'ijkl'])
+        remote_ports = []
 
-        async def handle_get(_):
+        async def handle_get(request):
+            remote_ports.append(request.transport._sock.getpeername()[1])
             return web.Response(status=200, body=next(bodies))
 
         app.add_routes([
@@ -271,6 +273,9 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(body_1, b'abcd')
         self.assertEqual(body_2, b'efgh')
         self.assertEqual(body_3, b'ijkl')
+
+        self.assertNotEqual(remote_ports[0], remote_ports[1])
+        self.assertEqual(remote_ports[1], remote_ports[2])
 
     @async_test
     async def test_http_timeout(self):
