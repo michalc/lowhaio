@@ -82,15 +82,15 @@ def unset_tcp_cork(sock):
 
 def Pool(
         get_dns_resolver=Resolver,
-        get_ssl_context=ssl.create_default_context,
-        recv_bufsize=16384,
-        transfer_encoding_handler=identity_or_chunked_handler,
         get_sock=get_nonblocking_sock,
-        keep_alive_timeout=15,
-        socket_timeout=10,
+        get_ssl_context=ssl.create_default_context,
+        transfer_encoding_handler=identity_or_chunked_handler,
+        sock_pre_message=set_tcp_cork if hasattr(socket, 'TCP_CORK') else lambda _: None,
+        sock_post_message=unset_tcp_cork if hasattr(socket, 'TCP_CORK') else lambda _: None,
         http_version=b'HTTP/1.1',
-        pre_message=set_tcp_cork if hasattr(socket, 'TCP_CORK') else lambda _: None,
-        post_message=unset_tcp_cork if hasattr(socket, 'TCP_CORK') else lambda _: None,
+        keep_alive_timeout=15,
+        recv_bufsize=16384,
+        socket_timeout=10,
 ):
 
     loop = \
@@ -141,10 +141,10 @@ def Pool(
                 raise
 
         try:
-            pre_message(sock)
+            sock_pre_message(sock)
             await send_header(sock, method, parsed_url, params, headers)
             await send_body(sock, body, body_args, body_kwargs)
-            post_message(sock)
+            sock_post_message(sock)
 
             code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
             response_body = response_body_generator(sock, socket_timeout, body_handler,
