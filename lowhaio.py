@@ -165,16 +165,14 @@ def Pool(
         except KeyError:
             return None
 
-        ip_addresses_str = [str(ip_address) for ip_address in ip_addresses]
-
         while socks:
             _sock = socks.popleft()
 
             close_callback = close_callbacks.pop(_sock)
             close_callback.cancel()
 
-            connected_ip = _sock.getpeername()[0]
-            if connected_ip not in ip_addresses_str:
+            connected_ip = ipaddress.ip_address(_sock.getpeername()[0])
+            if connected_ip not in ip_addresses:
                 _sock.close()
                 continue
 
