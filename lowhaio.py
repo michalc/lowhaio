@@ -528,6 +528,5 @@ def timeout(loop, max_time):
         if cancelling_due_to_timeout:
             raise asyncio.TimeoutError()
         raise
-
     finally:
         handle.cancel()
