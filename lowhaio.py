@@ -116,7 +116,7 @@ def Pool(
 
         key = (parsed_url.scheme, parsed_url.netloc)
 
-        sock = get_from_pool(key)
+        sock = get_from_pool(key, ip_addresses)
 
         if sock is None:
             sock = get_sock()
@@ -159,17 +159,24 @@ def Pool(
 
         return code, response_headers, response_body
 
-    def get_from_pool(key):
+    def get_from_pool(key, ip_addresses):
         try:
             socks = pool[key]
         except KeyError:
             return None
+
+        ip_addresses_str = [str(ip_address) for ip_address in ip_addresses]
 
         while socks:
             _sock = socks.popleft()
 
             close_callback = close_callbacks.pop(_sock)
             close_callback.cancel()
+
+            connected_ip = _sock.getpeername()[0]
+            if connected_ip not in ip_addresses_str:
+                _sock.close()
+                continue
 
             if _sock.fileno() != -1:
                 return _sock

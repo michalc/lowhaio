@@ -2,6 +2,8 @@
 
 A lightweight Python asyncio HTTP/1.1 client. No additional tasks are created; all code is in a single module; and other than the standard library only a single dependency is required, [aiodnsresolver](https://github.com/michalc/aiodnsresolver).
 
+Persistent connections are DNS-aware, in that they are not re-used if they do not match a current A record for the domain.
+
 
 ## Installation
 
