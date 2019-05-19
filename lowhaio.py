@@ -167,9 +167,9 @@ def Pool(
 
         while socks:
             _sock = socks.popleft()
-            close_callback = close_callbacks[_sock]
+
+            close_callback = close_callbacks.pop(_sock)
             close_callback.cancel()
-            del close_callbacks[_sock]
 
             if _sock.fileno() != -1:
                 return _sock
