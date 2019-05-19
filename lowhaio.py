@@ -48,6 +48,11 @@ class EmptyAsyncIterator():
         raise StopAsyncIteration()
 
 
+get_current_task = \
+    asyncio.current_task if hasattr(asyncio, 'current_task') else \
+    asyncio.Task.current_task
+
+
 def streamed(data):
     async def _streamed():
         yield data
@@ -508,9 +513,7 @@ async def tls_complete_handshake(loop, ssl_sock, socket_timeout):
 def timeout(loop, max_time):
 
     cancelling_due_to_timeout = False
-    current_task = \
-        asyncio.current_task() if hasattr(asyncio, 'current_task') else \
-        asyncio.Task.current_task()
+    current_task = get_current_task()
 
     def cancel():
         nonlocal cancelling_due_to_timeout
