@@ -55,6 +55,11 @@ response = await buffered(body)
 ```
 
 
+## Headers
+
+The only header automatically added to requests is the `host` header, which is the idna/punycode-encoded domain name from the requested URL.
+
+
 ## Exceptions
 
 Exceptions raised are subclasses of `HttpError`. If a lower-level exception caused this, it is set in the `__cause__` attribute of the `HttpError`
