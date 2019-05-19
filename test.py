@@ -233,6 +233,46 @@ class TestIntegration(unittest.TestCase):
         self.assertIsInstance(cm.exception.__cause__, ssl.SSLError)
 
     @async_test
+    async def test_after_keep_alive_timeout(self):
+        loop = asyncio.get_event_loop()
+        app = web.Application()
+
+        bodies = iter([b'abcd', b'efgh', b'ijkl'])
+
+        async def handle_get(_):
+            return web.Response(status=200, body=next(bodies))
+
+        app.add_routes([
+            web.get('/page', handle_get)
+        ])
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.add_async_cleanup(runner.cleanup)
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+
+        with FastForward(loop) as forward:
+
+            request, close = Pool()
+            self.add_async_cleanup(close)
+
+            _, _, body_1_stream = await request(b'GET', 'http://localhost:8080/page')
+            body_1 = await buffered(body_1_stream)
+
+            await forward(15)
+
+            _, _, body_2_stream = await request(b'GET', 'http://localhost:8080/page')
+            body_2 = await buffered(body_2_stream)
+
+            _, _, body_3_stream = await request(b'GET', 'http://localhost:8080/page')
+            body_3 = await buffered(body_3_stream)
+
+        self.assertEqual(body_1, b'abcd')
+        self.assertEqual(body_2, b'efgh')
+        self.assertEqual(body_3, b'ijkl')
+
+    @async_test
     async def test_http_timeout(self):
         loop = asyncio.get_event_loop()
         app = web.Application()
