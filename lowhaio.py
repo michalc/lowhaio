@@ -425,7 +425,7 @@ async def sendall(loop, sock, socket_timeout, data):
     data_memoryview = memoryview(data)
 
     try:
-        with timeout(socket_timeout):
+        with timeout(loop, socket_timeout):
             return await result
     finally:
         loop.remove_writer(fileno)
@@ -463,7 +463,7 @@ async def _recv(loop, sock, socket_timeout, recv_bufsize):
     loop.add_reader(fileno, reader)
 
     try:
-        with timeout(socket_timeout):
+        with timeout(loop, socket_timeout):
             return await result
     finally:
         loop.remove_reader(fileno)
@@ -497,7 +497,7 @@ async def tls_complete_handshake(loop, ssl_sock, socket_timeout):
     loop.add_writer(fileno, handshake)
 
     try:
-        with timeout(socket_timeout):
+        with timeout(loop, socket_timeout):
             return await done
     finally:
         loop.remove_reader(fileno)
@@ -505,15 +505,12 @@ async def tls_complete_handshake(loop, ssl_sock, socket_timeout):
 
 
 @contextlib.contextmanager
-def timeout(max_time):
+def timeout(loop, max_time):
 
     cancelling_due_to_timeout = False
     current_task = \
         asyncio.current_task() if hasattr(asyncio, 'current_task') else \
         asyncio.Task.current_task()
-    loop = \
-        asyncio.get_running_loop() if hasattr(asyncio, 'get_running_loop') else \
-        asyncio.get_event_loop()
 
     def cancel():
         nonlocal cancelling_due_to_timeout

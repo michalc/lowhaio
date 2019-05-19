@@ -474,7 +474,7 @@ class TestTimeout(unittest.TestCase):
         loop = asyncio.get_event_loop()
 
         async def worker():
-            with timeout(1):
+            with timeout(loop, 1):
                 await asyncio.sleep(0.5)
 
         with FastForward(loop) as forward:
@@ -488,7 +488,7 @@ class TestTimeout(unittest.TestCase):
         loop = asyncio.get_event_loop()
 
         async def worker():
-            with timeout(1):
+            with timeout(loop, 1):
                 await asyncio.sleep(1.5)
 
         with FastForward(loop) as forward:
@@ -503,7 +503,7 @@ class TestTimeout(unittest.TestCase):
         loop = asyncio.get_event_loop()
 
         async def worker():
-            with timeout(1):
+            with timeout(loop, 1):
                 await asyncio.sleep(0.5)
 
         with FastForward(loop) as forward:
@@ -519,7 +519,7 @@ class TestTimeout(unittest.TestCase):
         loop = asyncio.get_event_loop()
 
         async def worker():
-            with timeout(2):
+            with timeout(loop, 2):
                 raise Exception('inner')
 
         with FastForward(loop) as forward:
@@ -535,7 +535,7 @@ class TestTimeout(unittest.TestCase):
         cleanup = asyncio.Event()
 
         async def worker():
-            with timeout(1):
+            with timeout(loop, 1):
                 try:
                     await asyncio.sleep(2)
                 except asyncio.CancelledError:
@@ -557,7 +557,7 @@ class TestTimeout(unittest.TestCase):
         ignored = asyncio.Event()
 
         async def worker():
-            with timeout(1):
+            with timeout(loop, 1):
                 try:
                     await asyncio.sleep(2)
                 except asyncio.CancelledError:
