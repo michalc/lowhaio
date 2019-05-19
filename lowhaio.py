@@ -81,7 +81,7 @@ def unset_tcp_cork(sock):
 
 
 def Pool(
-        dns_resolver=Resolver,
+        get_dns_resolver=Resolver,
         get_ssl_context=ssl.create_default_context,
         recv_bufsize=16384,
         transfer_encoding_handler=identity_or_chunked_handler,
@@ -97,7 +97,7 @@ def Pool(
         asyncio.get_running_loop() if hasattr(asyncio, 'get_running_loop') else \
         asyncio.get_event_loop()
     ssl_context = get_ssl_context()
-    dns_resolve, dns_resolver_clear_cache = dns_resolver()
+    dns_resolve, dns_resolver_clear_cache = get_dns_resolver()
 
     pool = {}
     close_callbacks = {}
