@@ -18,13 +18,13 @@ setuptools.setup(
     py_modules=[
         'lowhaio',
     ],
-    python_requires='>=3.6.3',
+    python_requires='~=3.6.0',
     install_requires=[
-        'aiodnsresolver==0.0.130',
+        'aiodnsresolver~=0.0.131',
     ],
     test_suite='test',
     tests_require=[
-        'aiofastforward==0.0.24',
+        'aiofastforward~=0.0.24',
         'aiohttp~=3.5.4',
     ],
     classifiers=[
