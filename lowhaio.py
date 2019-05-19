@@ -65,7 +65,7 @@ def identity_or_chunked_handler(transfer_encoding):
     }[transfer_encoding]
 
 
-def get_sock_default():
+def get_nonblocking_sock():
     sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
     sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
     sock.setblocking(False)
@@ -85,7 +85,7 @@ def Pool(
         ssl_context=ssl.create_default_context,
         recv_bufsize=16384,
         transfer_encoding_handler=identity_or_chunked_handler,
-        get_sock=get_sock_default,
+        get_sock=get_nonblocking_sock,
         keep_alive_timeout=15,
         socket_timeout=10,
         http_version=b'HTTP/1.1',
