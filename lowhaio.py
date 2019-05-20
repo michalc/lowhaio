@@ -17,6 +17,10 @@ class HttpError(Exception):
     pass
 
 
+class HttpRequestValidationError(HttpError):
+    pass
+
+
 class HttpConnectionError(HttpError):
     pass
 
@@ -109,6 +113,20 @@ def Pool(
 
     async def request(method, url, params=(), headers=(),
                       body=EmptyAsyncIterator, body_args=(), body_kwargs=()):
+        invalid = \
+            b'\r' in http_version or b'\n' in http_version or \
+            b'\r' in method or b'\n' in method or '\r' in url or '\n' in url or \
+            any(
+                '\r' in key or '\n' in key or '\r' in value or '\n' in value
+                for key, value in params
+            ) or \
+            any(
+                b'\r' in key or b'\n' in key or b'\r' in value or b'\n' in value
+                for key, value in headers
+            )
+        if invalid:
+            raise HttpRequestValidationError()
+
         parsed_url = urllib.parse.urlsplit(url)
 
         try:
