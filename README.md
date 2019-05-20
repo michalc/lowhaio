@@ -83,4 +83,4 @@ This is to make the core behaviour useful to a reasonable range of uses, but to 
 - cookies;
 - compressing/decompressing requests/responses;
 - [encoding chunked requests](https://github.com/michalc/lowhaio-chunked);
-- authentication, such as [AWS Signature Version 4](https://github.com/michalc/lowhaio-aws-sigv4).
+- authentication, such as [AWS Signature Version 4](https://github.com/michalc/lowhaio-aws-sigv4), or [AWS Signature Version 4 with unsigned payload](https://github.com/michalc/lowhaio-aws-sigv4-unsigned-payload).
