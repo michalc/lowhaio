@@ -62,7 +62,7 @@ class TestIntegration(unittest.TestCase):
         content_length = str(1000000 * 10 * 3).encode()
 
         request, close = Pool()
-        self.addCleanup(close)
+        self.add_async_cleanup(close)
         _, _, body = await request(
             b'POST', 'http://localhost:8080/page', (), (
                 (b'content-length', content_length),
@@ -101,11 +101,11 @@ class TestIntegration(unittest.TestCase):
         await site.start()
 
         request, close = Pool()
-        self.addCleanup(close)
+        self.add_async_cleanup(close)
 
         for recv_bufsize, keep_alive_timeout in itertools.product((1, 26, 16384), (0, 15)):
             request, close = Pool(recv_bufsize=recv_bufsize, keep_alive_timeout=keep_alive_timeout)
-            self.addCleanup(close)
+            self.add_async_cleanup(close)
             for chunk_size in range(1, 27):
                 _, headers, body = await request(
                     b'GET', 'http://localhost:8080/page',
@@ -148,7 +148,7 @@ class TestIntegration(unittest.TestCase):
 
         for recv_bufsize, keep_alive_timeout in itertools.product((1, 26, 16384), (0, 15)):
             request, close = Pool(recv_bufsize=recv_bufsize, keep_alive_timeout=keep_alive_timeout)
-            self.addCleanup(close)
+            self.add_async_cleanup(close)
 
             for chunk_size in range(1, 27):
                 _, _, body = await request(
@@ -194,7 +194,7 @@ class TestIntegration(unittest.TestCase):
         for recv_bufsize, connection, keep_alive_timeout in combinations:
             request, close = Pool(recv_bufsize=recv_bufsize, keep_alive_timeout=keep_alive_timeout,
                                   http_version=b'HTTP/1.0')
-            self.addCleanup(close)
+            self.add_async_cleanup(close)
 
             for chunk_size in range(1, 27):
                 _, _, body = await request(
@@ -226,7 +226,7 @@ class TestIntegration(unittest.TestCase):
         await site.start()
 
         request, close = Pool()
-        self.addCleanup(close)
+        self.add_async_cleanup(close)
         with self.assertRaises(HttpTlsError) as cm:
             await request(b'GET', 'https://localhost:8080/page')
 
@@ -257,7 +257,7 @@ class TestIntegration(unittest.TestCase):
         with FastForward(loop) as forward:
 
             request, close = Pool()
-            self.addCleanup(close)
+            self.add_async_cleanup(close)
 
             _, _, body_1_stream = await request(b'GET', 'http://localhost:8080/page')
             body_1 = await buffered(body_1_stream)
@@ -298,7 +298,7 @@ class TestIntegration(unittest.TestCase):
         with FastForward(loop) as forward:
 
             request, close = Pool()
-            self.addCleanup(close)
+            self.add_async_cleanup(close)
 
             request = asyncio.ensure_future(request(b'GET', 'http://localhost:8080/page'))
             with self.assertRaises(HttpDataError) as cm:
@@ -318,7 +318,7 @@ class TestEndToEnd(unittest.TestCase):
     @async_test
     async def test_http_post_small(self):
         request, close = Pool()
-        self.addCleanup(close)
+        self.add_async_cleanup(close)
 
         async def data():
             yield b'some-data=something'
@@ -345,7 +345,7 @@ class TestEndToEnd(unittest.TestCase):
     @async_test
     async def test_http_post_small_buffered_streamed(self):
         request, close = Pool()
-        self.addCleanup(close)
+        self.add_async_cleanup(close)
 
         code, headers, body = await request(
             b'POST', 'http://postman-echo.com/post', (), (
@@ -367,7 +367,7 @@ class TestEndToEnd(unittest.TestCase):
     @async_test
     async def test_https_get_chunked(self):
         request, close = Pool()
-        self.addCleanup(close)
+        self.add_async_cleanup(close)
 
         _, _, body = await request(
             b'GET', 'https://postman-echo.com/stream/1000',
@@ -389,7 +389,7 @@ class TestEndToEnd(unittest.TestCase):
     @async_test
     async def test_http_get_chunked(self):
         request, close = Pool()
-        self.addCleanup(close)
+        self.add_async_cleanup(close)
 
         _, _, body = await request(
             b'GET', 'http://postman-echo.com/stream/1000',
@@ -411,7 +411,7 @@ class TestEndToEnd(unittest.TestCase):
     @async_test
     async def test_https_post_small(self):
         request, close = Pool()
-        self.addCleanup(close)
+        self.add_async_cleanup(close)
 
         async def data():
             yield b'some-data=something'
@@ -445,7 +445,7 @@ class TestEndToEnd(unittest.TestCase):
     @async_test
     async def test_http_get_small_via_dns(self):
         request, close = Pool()
-        self.addCleanup(close)
+        self.add_async_cleanup(close)
 
         _, _, body = await request(b'GET', 'http://www.ovh.net/files/1Mio.dat')
         m = hashlib.md5()
@@ -457,7 +457,7 @@ class TestEndToEnd(unittest.TestCase):
     @async_test
     async def test_http_get_small_via_ip_address(self):
         request, close = Pool()
-        self.addCleanup(close)
+        self.add_async_cleanup(close)
 
         _, _, body = await request(b'GET', 'http://212.183.159.230/5MB.zip')
         m = hashlib.md5()

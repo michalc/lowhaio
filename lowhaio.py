@@ -293,8 +293,8 @@ def Pool(
             else:
                 sock.close()
 
-    def close():
-        dns_resolver_clear_cache()
+    async def close():
+        await dns_resolver_clear_cache()
         for socks in pool.values():
             for sock in socks:
                 close_callbacks[sock].cancel()
