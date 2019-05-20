@@ -17,11 +17,11 @@ class HttpError(Exception):
     pass
 
 
-class HttpDnsError(HttpError):
+class HttpConnectionError(HttpError):
     pass
 
 
-class HttpConnectionError(HttpError):
+class HttpDnsError(HttpConnectionError):
     pass
 
 
