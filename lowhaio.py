@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import collections
 import ipaddress
 import urllib.parse
 import ssl
@@ -189,7 +188,8 @@ def Pool(
             return None
 
         while socks:
-            _sock = socks.popleft()
+            _sock = next(iter(socks))
+            del socks[_sock]
 
             close_callback = close_callbacks.pop(_sock)
             close_callback.cancel()
@@ -208,22 +208,17 @@ def Pool(
         try:
             key_pool = pool[key]
         except KeyError:
-            key_pool = collections.deque()
+            key_pool = {}
             pool[key] = key_pool
 
-        key_pool.append(sock)
+        key_pool[sock] = None
         close_callbacks[sock] = loop.call_later(keep_alive_timeout, close_by_keep_alive_timeout,
                                                 key, sock)
 
     def close_by_keep_alive_timeout(key, sock):
         sock.close()
         del close_callbacks[sock]
-
-        pool[key] = [
-            _sock
-            for _sock in pool[key]
-            if _sock != sock
-        ]
+        del pool[key][sock]
         if not pool[key]:
             del pool[key]
 
