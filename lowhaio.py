@@ -16,10 +16,6 @@ class HttpError(Exception):
     pass
 
 
-class HttpRequestValidationError(HttpError):
-    pass
-
-
 class HttpConnectionError(HttpError):
     pass
 
@@ -112,9 +108,6 @@ def Pool(
 
     async def request(method, url, params=(), headers=(),
                       body=EmptyAsyncIterator, body_args=(), body_kwargs=()):
-        if '\r' in url or '\n' in url:
-            raise HttpRequestValidationError()
-
         parsed_url = urllib.parse.urlsplit(url)
 
         try:
