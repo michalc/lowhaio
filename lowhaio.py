@@ -104,7 +104,6 @@ def Pool(
     dns_resolve, dns_resolver_clear_cache = get_dns_resolver()
 
     pool = {}
-    close_callbacks = {}
 
     async def request(method, url, params=(), headers=(),
                       body=EmptyAsyncIterator, body_args=(), body_kwargs=()):
@@ -170,11 +169,9 @@ def Pool(
             return None
 
         while socks:
-            _sock = next(iter(socks))
-            del socks[_sock]
-
-            close_callback = close_callbacks.pop(_sock)
+            _sock, close_callback = next(iter(socks.items()))
             close_callback.cancel()
+            del socks[_sock]
 
             connected_ip = ipaddress.ip_address(_sock.getpeername()[0])
             if connected_ip not in ip_addresses:
@@ -193,13 +190,11 @@ def Pool(
             key_pool = {}
             pool[key] = key_pool
 
-        key_pool[sock] = None
-        close_callbacks[sock] = loop.call_later(keep_alive_timeout, close_by_keep_alive_timeout,
-                                                key, sock)
+        key_pool[sock] = loop.call_later(keep_alive_timeout, close_by_keep_alive_timeout,
+                                         key, sock)
 
     def close_by_keep_alive_timeout(key, sock):
         sock.close()
-        del close_callbacks[sock]
         del pool[key][sock]
         if not pool[key]:
             del pool[key]
@@ -291,11 +286,10 @@ def Pool(
     async def close():
         await dns_resolver_clear_cache()
         for socks in pool.values():
-            for sock in socks:
-                close_callbacks[sock].cancel()
+            for sock, close_callback in socks.items():
+                close_callback.cancel()
                 sock.close()
         pool.clear()
-        close_callbacks.clear()
 
     return request, close
 
