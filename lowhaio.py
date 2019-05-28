@@ -412,6 +412,8 @@ async def sendall(loop, sock, socket_timeout, data):
             elif total_num_bytes == len(data) and not result.done():
                 loop.remove_writer(fileno)
                 result.set_result(None)
+            else:
+                reset_timeout()
 
     result = asyncio.Future()
     fileno = sock.fileno()
@@ -419,7 +421,7 @@ async def sendall(loop, sock, socket_timeout, data):
     data_memoryview = memoryview(data)
 
     try:
-        with timeout(loop, socket_timeout):
+        with timeout(loop, socket_timeout) as reset_timeout:
             return await result
     finally:
         loop.remove_writer(fileno)
@@ -473,7 +475,7 @@ async def tls_complete_handshake(loop, ssl_sock, socket_timeout):
         try:
             ssl_sock.do_handshake()
         except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
-            pass
+            reset_timeout()
         except BaseException as exception:
             loop.remove_reader(fileno)
             loop.remove_writer(fileno)
@@ -491,7 +493,7 @@ async def tls_complete_handshake(loop, ssl_sock, socket_timeout):
     loop.add_writer(fileno, handshake)
 
     try:
-        with timeout(loop, socket_timeout):
+        with timeout(loop, socket_timeout) as reset_timeout:
             return await done
     finally:
         loop.remove_reader(fileno)
@@ -509,10 +511,15 @@ def timeout(loop, max_time):
         cancelling_due_to_timeout = True
         current_task.cancel()
 
+    def reset():
+        nonlocal handle
+        handle.cancel()
+        handle = loop.call_later(max_time, cancel)
+
     handle = loop.call_later(max_time, cancel)
 
     try:
-        yield
+        yield reset
     except asyncio.CancelledError:
         if cancelling_due_to_timeout:
             raise asyncio.TimeoutError()
