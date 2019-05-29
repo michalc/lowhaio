@@ -221,7 +221,7 @@ def Pool(
         headers_with_host = \
             headers if host_specified else \
             ((b'host', parsed_url.hostname.encode('idna')),) + headers
-        await sendall(loop, sock, socket_timeout, b'%s %s %s\r\n%s\r\n' % (
+        await send_all(loop, sock, socket_timeout, b'%s %s %s\r\n%s\r\n' % (
             method, outgoing_path_qs, http_version, b''.join(
                 b'%s:%s\r\n' % (key, value)
                 for (key, value) in headers_with_host
@@ -260,7 +260,7 @@ def Pool(
 
     async def send_body(sock, body, body_args, body_kwargs):
         async for chunk in body(*body_args, **dict(body_kwargs)):
-            await sendall(loop, sock, socket_timeout, chunk)
+            await send_all(loop, sock, socket_timeout, chunk)
 
     async def response_body_generator(sock, socket_timeout, body_handler, method, response_headers,
                                       unprocessed, key, connection):
@@ -377,7 +377,7 @@ async def chunked_handler(loop, sock, socket_timeout, recv_bufsize, _, __, unpro
         unprocessed = unprocessed[2:]
 
 
-async def sendall(loop, sock, socket_timeout, data):
+async def send_all(loop, sock, socket_timeout, data):
     try:
         latest_num_bytes = sock.send(data)
     except (BlockingIOError, ssl.SSLWantWriteError):
