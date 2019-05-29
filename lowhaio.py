@@ -221,15 +221,12 @@ def Pool(
         headers_with_host = \
             headers if host_specified else \
             ((b'host', parsed_url.hostname.encode('idna')),) + headers
-        await sendall(
-            loop, sock, socket_timeout,
-            method + b' ' + outgoing_path_qs + b' ' + http_version + b'\r\n' +
-            b''.join(
-                key + b':' + value + b'\r\n'
+        await sendall(loop, sock, socket_timeout, b'%s %s %s\r\n%s\r\n' % (
+            method, outgoing_path_qs, http_version, b''.join(
+                b'%s:%s\r\n' % (key, value)
                 for (key, value) in headers_with_host
-            ) +
-            b'\r\n',
-        )
+            )
+        ))
 
     async def recv_header(sock):
         unprocessed = b''
