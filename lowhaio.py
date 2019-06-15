@@ -36,15 +36,9 @@ class HttpConnectionClosedError(HttpDataError):
     pass
 
 
-class EmptyAsyncIterator():
-
-    __slots__ = ()
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        raise StopAsyncIteration()
+async def empty_async_iterator():
+    while False:
+        yield
 
 
 get_current_task = \
@@ -106,7 +100,7 @@ def Pool(
     pool = {}
 
     async def request(method, url, params=(), headers=(),
-                      body=EmptyAsyncIterator, body_args=(), body_kwargs=()):
+                      body=empty_async_iterator, body_args=(), body_kwargs=()):
         parsed_url = urllib.parse.urlsplit(url)
 
         try:
