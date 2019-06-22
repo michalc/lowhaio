@@ -78,7 +78,7 @@ The scope of the core functions is restricted to:
 
 This is to make the core behaviour useful to a reasonable range of uses, but to _not_ include what can be added by layer(s) on top. Specifically not included:
 
-- following redirects;
+- [following redirects](https://github.com/michalc/lowhaio-redirect);
 - [retrying failed requests](https://github.com/michalc/lowhaio-retry);
 - cookies;
 - compressing/decompressing requests/responses;
