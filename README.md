@@ -78,9 +78,9 @@ The scope of the core functions is restricted to:
 
 This is to make the core behaviour useful to a reasonable range of uses, but to _not_ include what can be added by layer(s) on top. Specifically not included:
 
-- [following redirects](https://github.com/michalc/lowhaio-redirect);
-- [retrying failed requests](https://github.com/michalc/lowhaio-retry);
-- [encoding chunked requests](https://github.com/michalc/lowhaio-chunked);
-- authentication, such as [AWS Signature Version 4](https://github.com/michalc/lowhaio-aws-sigv4), or [AWS Signature Version 4 with unsigned payload](https://github.com/michalc/lowhaio-aws-sigv4-unsigned-payload);
+- following redirects, implemented by [lowhaio-redirect](https://github.com/michalc/lowhaio-redirect);
+- retrying failed requests, implemented by [lowhaio-retry](https://github.com/michalc/lowhaio-retry);
+- encoding chunked requests, implemented by [lowhaio-chunked](https://github.com/michalc/lowhaio-chunked);
+- authentication, such as AWS Signature Version 4 implemented by [lowhaio-aws-sigv4](https://github.com/michalc/lowhaio-aws-sigv4), or AWS Signature Version 4 with unsigned payload implemented by [lowhaio-aws-sigv4-unsigned-payload](https://github.com/michalc/lowhaio-aws-sigv4-unsigned-payload);
 - compressing/decompressing requests/responses;
 - cookies.
