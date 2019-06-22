@@ -80,7 +80,7 @@ This is to make the core behaviour useful to a reasonable range of uses, but to 
 
 - [following redirects](https://github.com/michalc/lowhaio-redirect);
 - [retrying failed requests](https://github.com/michalc/lowhaio-retry);
-- cookies;
-- compressing/decompressing requests/responses;
 - [encoding chunked requests](https://github.com/michalc/lowhaio-chunked);
-- authentication, such as [AWS Signature Version 4](https://github.com/michalc/lowhaio-aws-sigv4), or [AWS Signature Version 4 with unsigned payload](https://github.com/michalc/lowhaio-aws-sigv4-unsigned-payload).
+- authentication, such as [AWS Signature Version 4](https://github.com/michalc/lowhaio-aws-sigv4), or [AWS Signature Version 4 with unsigned payload](https://github.com/michalc/lowhaio-aws-sigv4-unsigned-payload);
+- compressing/decompressing requests/responses;
+- cookies.
