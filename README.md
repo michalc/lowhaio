@@ -35,6 +35,8 @@ async def main():
     async for chunk in response_body:
         print(chunk)
 
+    await close()
+
 loop = asyncio.get_event_loop()
 loop.run_until_complete(main())
 ```
@@ -56,6 +58,8 @@ async def main():
         body=request_body,
     )
     print(await buffered(response_body))
+
+    await close()
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(main())
@@ -104,6 +108,8 @@ async def main():
         body=request_body,
     )
     print(await buffered(response_body))
+
+    await close()
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(main())
