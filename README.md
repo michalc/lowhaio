@@ -74,6 +74,42 @@ Exceptions raised are subclasses of `HttpError`. If a lower-level exception caus
 Exceptions before any data is sent are instances of `HttpConnectionError`, and after data is sent, `HttpDataError`. This is to make it possible to know if non-idempotent requests can be retried.
 
 
+## Custom SSL context
+
+Lowhaio can be used with an custom SSL context through through the `get_ssl_context` parameter to `Pool`. For example, to use the certifi CA bundle, you can install it by
+
+```bash
+pip install certifi
+```
+
+and use it as below.
+
+```python
+import asyncio
+import ssl
+
+import certifi
+from lowhaio import Pool, buffered, streamed
+
+async def main():
+    request, close = Pool(
+        get_ssl_context=lambda: ssl.create_default_context(cafile=certifi.where()),
+    )
+
+    request_body = streamed(b'abc')
+
+    code, headers, response_body = await request(
+        b'POST', 'https://postman-echo.com/post',
+        headers=((b'content-length', b'3'), (b'content-type', b'text/plain'),),
+        body=request_body,
+    )
+    print(await buffered(response_body))
+
+loop = asyncio.get_event_loop()
+loop.run_until_complete(main())
+```
+
+
 ## Scope
 
 The scope of the core functions is restricted to:
