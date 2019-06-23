@@ -17,41 +17,48 @@ pip install lowhaio
 The API is streaming-first: for both request and response bodies, asynchronous iterators are used.
 
 ```python
-import os
+import asyncio
 from lowhaio import Pool
 
-request, _ = Pool()
+async def main():
+    request, close = Pool()
 
-path = 'my.file'
-content_length = str(os.stat(path).st_size).encode()
-async def file_data():
-    with open(path, 'rb') as file:
-        for chunk in iter(lambda: file.read(16384), b''):
-            yield chunk
+    async def request_body():
+        yield b'a'
+        yield b'bc'
 
-code, headers, body = await request(
-    b'POST', 'https://example.com/path',
-    params=(), headers=((b'content-length': content_length),), body=file_data,
-)
-async for chunk in body:
-    print(chunk)
+    code, headers, response_body = await request(
+        b'POST', 'https://postman-echo.com/post',
+        headers=((b'content-length', b'3'), (b'content-type', b'text/plain'),),
+        body=request_body,
+    )
+    async for chunk in response_body:
+        print(chunk)
+
+loop = asyncio.get_event_loop()
+loop.run_until_complete(main())
 ```
 
 However, there are helper functions `streamed` and `buffered` when this isn't required or possible.
 
 ```python
+import asyncio
 from lowhaio import Pool, streamed, buffered
 
-request, _ = Pool()
+async def main():
+    request, close = Pool()
 
-content = b'some-data'
-content_length = b'9'
-code, headers, body = await request(
-    b'POST', 'https://example.com/path',
-    params=(), headers=((b'content-length': content_length),), body=streamed(content),
-)
+    request_body = streamed(b'abc')
 
-response = await buffered(body)
+    code, headers, response_body = await request(
+        b'POST', 'https://postman-echo.com/post',
+        headers=((b'content-length', b'3'), (b'content-type', b'text/plain'),),
+        body=request_body,
+    )
+    print(await buffered(response_body))
+
+loop = asyncio.get_event_loop()
+loop.run_until_complete(main())
 ```
 
 
