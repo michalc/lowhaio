@@ -1,6 +1,6 @@
 # lowhaio [![CircleCI](https://circleci.com/gh/michalc/lowhaio.svg?style=svg)](https://circleci.com/gh/michalc/lowhaio) [![Test Coverage](https://api.codeclimate.com/v1/badges/418d72f1de909bff27b6/test_coverage)](https://codeclimate.com/github/michalc/lowhaio/test_coverage)
 
-A lightweight Python asyncio HTTP/1.1 client. No additional tasks are created; all code is in a single module; and other than the standard library only a single dependency is required, [aiodnsresolver](https://github.com/michalc/
+A lightweight Python asyncio HTTP/1.1 client. No additional tasks are created; all code is in a single module; and other than the standard library only a single dependency is required, [aiodnsresolver](https://github.com/michalc/)
 
 Lowhaio has a deliberately limited scope: it includes just enough code to be a useful HTTP client and allow more complex behaviour to be added on top if required.
 
