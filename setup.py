@@ -33,4 +33,7 @@ setuptools.setup(
         'Operating System :: OS Independent',
         'Framework :: AsyncIO',
     ],
+    keywords=[
+        'http',
+    ],
 )
