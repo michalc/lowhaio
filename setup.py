@@ -11,7 +11,7 @@ setuptools.setup(
     version='0.0.75',
     author='Michal Charemza',
     author_email='michal@charemza.name',
-    description='Lightweight Python asyncio HTTP/1.1 client. ',
+    description='Lightweight Python asyncio HTTP client. ',
     long_description=long_description(),
     long_description_content_type='text/markdown',
     url='https://github.com/michalc/lowhaio',
@@ -34,6 +34,6 @@ setuptools.setup(
         'Framework :: AsyncIO',
     ],
     keywords=[
-        'http',
+        'http/1.1',
     ],
 )
