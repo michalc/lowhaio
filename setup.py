@@ -18,7 +18,7 @@ setuptools.setup(
     py_modules=[
         'lowhaio',
     ],
-    python_requires='~=3.6.0',
+    python_requires='~=3.6.0, ~=3.7.0',
     install_requires=[
         'aiodnsresolver~=0.0.133',
     ],
