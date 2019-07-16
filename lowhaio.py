@@ -140,7 +140,7 @@ def Pool(
         try:
             sock_pre_message(sock)
             await send_header(sock, method, parsed_url, params, headers)
-            await send_body(sock, body, body_args, body_kwargs)
+            await send_body(loop, sock, socket_timeout, body, body_args, body_kwargs)
             sock_post_message(sock)
 
             code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
@@ -252,7 +252,7 @@ def Pool(
 
         return code, response_headers, body_handler, unprocessed, connection
 
-    async def send_body(sock, body, body_args, body_kwargs):
+    async def send_body(loop, sock, socket_timeout, body, body_args, body_kwargs):
         async for chunk in body(*body_args, **dict(body_kwargs)):
             await send_all(loop, sock, socket_timeout, chunk)
 
