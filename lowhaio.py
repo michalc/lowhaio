@@ -78,6 +78,11 @@ def unset_tcp_cork(sock):
     sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)  # pylint: disable=no-member
 
 
+async def send_body(loop, sock, socket_timeout, body, body_args, body_kwargs):
+    async for chunk in body(*body_args, **dict(body_kwargs)):
+        await send_all(loop, sock, socket_timeout, chunk)
+
+
 def Pool(
         get_dns_resolver=Resolver,
         get_sock=get_nonblocking_sock,
@@ -251,10 +256,6 @@ def Pool(
         body_handler = transfer_encoding_handler(transfer_encoding)
 
         return code, response_headers, body_handler, unprocessed, connection
-
-    async def send_body(loop, sock, socket_timeout, body, body_args, body_kwargs):
-        async for chunk in body(*body_args, **dict(body_kwargs)):
-            await send_all(loop, sock, socket_timeout, chunk)
 
     async def response_body_generator(sock, socket_timeout, body_handler, method, response_headers,
                                       unprocessed, key, connection):
