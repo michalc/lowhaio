@@ -83,6 +83,24 @@ async def send_body(loop, sock, socket_timeout, body, body_args, body_kwargs):
         await send_all(loop, sock, socket_timeout, chunk)
 
 
+async def send_header(loop, sock, socket_timeout,
+                      http_version, method, parsed_url, params, headers):
+    outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
+    outgoing_path = urllib.parse.quote(parsed_url.path).encode()
+    outgoing_path_qs = outgoing_path + \
+        ((b'?' + outgoing_qs) if outgoing_qs != b'' else b'')
+    host_specified = any(True for key, value in headers if key == b'host')
+    headers_with_host = \
+        headers if host_specified else \
+        ((b'host', parsed_url.hostname.encode('idna')),) + headers
+    await send_all(loop, sock, socket_timeout, b'%s %s %s\r\n%s\r\n' % (
+        method, outgoing_path_qs, http_version, b''.join(
+            b'%s:%s\r\n' % (key, value)
+            for (key, value) in headers_with_host
+        )
+    ))
+
+
 def Pool(
         get_dns_resolver=Resolver,
         get_sock=get_nonblocking_sock,
@@ -211,23 +229,6 @@ def Pool(
 
     def tls_wrapped(sock, host):
         return ssl_context.wrap_socket(sock, server_hostname=host, do_handshake_on_connect=False)
-
-    async def send_header(loop, sock, socket_timeout,
-                          http_version, method, parsed_url, params, headers):
-        outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
-        outgoing_path = urllib.parse.quote(parsed_url.path).encode()
-        outgoing_path_qs = outgoing_path + \
-            ((b'?' + outgoing_qs) if outgoing_qs != b'' else b'')
-        host_specified = any(True for key, value in headers if key == b'host')
-        headers_with_host = \
-            headers if host_specified else \
-            ((b'host', parsed_url.hostname.encode('idna')),) + headers
-        await send_all(loop, sock, socket_timeout, b'%s %s %s\r\n%s\r\n' % (
-            method, outgoing_path_qs, http_version, b''.join(
-                b'%s:%s\r\n' % (key, value)
-                for (key, value) in headers_with_host
-            )
-        ))
 
     async def recv_header(sock):
         unprocessed = b''
