@@ -78,13 +78,13 @@ def unset_tcp_cork(sock):
     sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)  # pylint: disable=no-member
 
 
-async def send_body(loop, sock, socket_timeout, body, body_args, body_kwargs):
+async def send_body_async_gen_bytes(loop, sock, socket_timeout, body, body_args, body_kwargs):
     async for chunk in body(*body_args, **dict(body_kwargs)):
         await send_all(loop, sock, socket_timeout, chunk)
 
 
-async def send_header(loop, sock, socket_timeout,
-                      http_version, method, parsed_url, params, headers):
+async def send_header_tuples_of_bytes(loop, sock, socket_timeout,
+                                      http_version, method, parsed_url, params, headers):
     outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
     outgoing_path = urllib.parse.quote(parsed_url.path).encode()
     outgoing_path_qs = outgoing_path + \
@@ -108,6 +108,8 @@ def Pool(
         transfer_encoding_handler=identity_or_chunked_handler,
         sock_pre_message=set_tcp_cork if hasattr(socket, 'TCP_CORK') else lambda _: None,
         sock_post_message=unset_tcp_cork if hasattr(socket, 'TCP_CORK') else lambda _: None,
+        send_header=send_header_tuples_of_bytes,
+        send_body=send_body_async_gen_bytes,
         http_version=b'HTTP/1.1',
         keep_alive_timeout=15,
         recv_bufsize=16384,
