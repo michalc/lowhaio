@@ -139,7 +139,7 @@ def Pool(
 
         try:
             sock_pre_message(sock)
-            await send_header(sock, method, parsed_url, params, headers)
+            await send_header(loop, sock, socket_timeout, method, parsed_url, params, headers)
             await send_body(loop, sock, socket_timeout, body, body_args, body_kwargs)
             sock_post_message(sock)
 
@@ -206,7 +206,7 @@ def Pool(
     def tls_wrapped(sock, host):
         return ssl_context.wrap_socket(sock, server_hostname=host, do_handshake_on_connect=False)
 
-    async def send_header(sock, method, parsed_url, params, headers):
+    async def send_header(loop, sock, socket_timeout, method, parsed_url, params, headers):
         outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
         outgoing_path = urllib.parse.quote(parsed_url.path).encode()
         outgoing_path_qs = outgoing_path + \
