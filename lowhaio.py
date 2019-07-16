@@ -78,6 +78,29 @@ def unset_tcp_cork(sock):
     sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)  # pylint: disable=no-member
 
 
+async def send_body_async_gen_bytes(loop, sock, socket_timeout, body, body_args, body_kwargs):
+    async for chunk in body(*body_args, **dict(body_kwargs)):
+        await send_all(loop, sock, socket_timeout, chunk)
+
+
+async def send_header_tuples_of_bytes(loop, sock, socket_timeout,
+                                      http_version, method, parsed_url, params, headers):
+    outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
+    outgoing_path = urllib.parse.quote(parsed_url.path).encode()
+    outgoing_path_qs = outgoing_path + \
+        ((b'?' + outgoing_qs) if outgoing_qs != b'' else b'')
+    host_specified = any(True for key, value in headers if key == b'host')
+    headers_with_host = \
+        headers if host_specified else \
+        ((b'host', parsed_url.hostname.encode('idna')),) + headers
+    await send_all(loop, sock, socket_timeout, b'%s %s %s\r\n%s\r\n' % (
+        method, outgoing_path_qs, http_version, b''.join(
+            b'%s:%s\r\n' % (key, value)
+            for (key, value) in headers_with_host
+        )
+    ))
+
+
 def Pool(
         get_dns_resolver=Resolver,
         get_sock=get_nonblocking_sock,
@@ -85,6 +108,8 @@ def Pool(
         transfer_encoding_handler=identity_or_chunked_handler,
         sock_pre_message=set_tcp_cork if hasattr(socket, 'TCP_CORK') else lambda _: None,
         sock_post_message=unset_tcp_cork if hasattr(socket, 'TCP_CORK') else lambda _: None,
+        send_header=send_header_tuples_of_bytes,
+        send_body=send_body_async_gen_bytes,
         http_version=b'HTTP/1.1',
         keep_alive_timeout=15,
         recv_bufsize=16384,
@@ -139,8 +164,9 @@ def Pool(
 
         try:
             sock_pre_message(sock)
-            await send_header(sock, method, parsed_url, params, headers)
-            await send_body(sock, body, body_args, body_kwargs)
+            await send_header(loop, sock, socket_timeout, http_version,
+                              method, parsed_url, params, headers)
+            await send_body(loop, sock, socket_timeout, body, body_args, body_kwargs)
             sock_post_message(sock)
 
             code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
@@ -206,22 +232,6 @@ def Pool(
     def tls_wrapped(sock, host):
         return ssl_context.wrap_socket(sock, server_hostname=host, do_handshake_on_connect=False)
 
-    async def send_header(sock, method, parsed_url, params, headers):
-        outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
-        outgoing_path = urllib.parse.quote(parsed_url.path).encode()
-        outgoing_path_qs = outgoing_path + \
-            ((b'?' + outgoing_qs) if outgoing_qs != b'' else b'')
-        host_specified = any(True for key, value in headers if key == b'host')
-        headers_with_host = \
-            headers if host_specified else \
-            ((b'host', parsed_url.hostname.encode('idna')),) + headers
-        await send_all(loop, sock, socket_timeout, b'%s %s %s\r\n%s\r\n' % (
-            method, outgoing_path_qs, http_version, b''.join(
-                b'%s:%s\r\n' % (key, value)
-                for (key, value) in headers_with_host
-            )
-        ))
-
     async def recv_header(sock):
         unprocessed = b''
         while True:
@@ -251,10 +261,6 @@ def Pool(
         body_handler = transfer_encoding_handler(transfer_encoding)
 
         return code, response_headers, body_handler, unprocessed, connection
-
-    async def send_body(sock, body, body_args, body_kwargs):
-        async for chunk in body(*body_args, **dict(body_kwargs)):
-            await send_all(loop, sock, socket_timeout, chunk)
 
     async def response_body_generator(sock, socket_timeout, body_handler, method, response_headers,
                                       unprocessed, key, connection):
