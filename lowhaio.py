@@ -171,8 +171,7 @@ def Pool(
 
             code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
             response_body = response_body_generator(sock, socket_timeout, body_handler,
-                                                    method, response_headers, unprocessed,
-                                                    key, connection)
+                                                    response_headers, unprocessed, key, connection)
         except Exception as exception:
             sock.close()
             raise HttpDataError() from exception
@@ -262,11 +261,11 @@ def Pool(
 
         return code, response_headers, body_handler, unprocessed, connection
 
-    async def response_body_generator(sock, socket_timeout, body_handler, method, response_headers,
+    async def response_body_generator(sock, socket_timeout, body_handler, response_headers,
                                       unprocessed, key, connection):
         try:
             generator = body_handler(loop, sock, socket_timeout, recv_bufsize,
-                                     method, response_headers, unprocessed)
+                                     response_headers, connection, unprocessed)
             unprocessed = None  # So can be garbage collected
 
             async for chunk in generator:
@@ -292,10 +291,10 @@ def Pool(
 
 
 def identity_handler(loop, sock, socket_timeout, recv_bufsize,
-                     method, response_headers, unprocessed):
+                     response_headers, connection, unprocessed):
     response_headers_dict = dict(response_headers)
     body_length = \
-        0 if method == b'HEAD' else \
+        0 if connection == b'keep-alive' and b'content-length' not in response_headers_dict else \
         None if b'content-length' not in response_headers_dict else \
         int(response_headers_dict[b'content-length'])
     return \

@@ -73,6 +73,119 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(posted_data_received, b'abc' * 1000000 * 10)
 
     @async_test
+    async def test_http_delete_200_no_content_length_no_body_keep_alive(self):
+
+        async def handle_delete(request):
+            await request.content.read()
+            response = web.StreamResponse(status=200, headers={'connection': 'keep-alive'})
+            await response.prepare(request)
+            return web.Response(status=200)
+
+        app = web.Application()
+        app.add_routes([
+            web.delete('/page', handle_delete)
+        ])
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.add_async_cleanup(runner.cleanup)
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+
+        request, close = Pool(http_version=b'HTTP/1.0')
+        self.add_async_cleanup(close)
+        code, headers, body = await request(
+            b'DELETE', 'http://localhost:8080/page'
+        )
+        self.assertEqual(code, b'200')
+        self.assertNotIn('content-length', dict(headers))
+        self.assertNotIn('transfer-encoding', dict(headers))
+        self.assertEqual(b'keep-alive', dict(headers)[b'connection'])
+        body_bytes = await buffered(body)
+        self.assertEqual(body_bytes, b'')
+
+    @async_test
+    async def test_http_delete_200_with_body(self):
+
+        async def handle_delete(request):
+            await request.content.read()
+            return web.Response(status=200, body=b'some-data')
+
+        app = web.Application()
+        app.add_routes([
+            web.delete('/page', handle_delete)
+        ])
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.add_async_cleanup(runner.cleanup)
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+
+        request, close = Pool()
+        self.add_async_cleanup(close)
+        code, _, body = await request(
+            b'DELETE', 'http://localhost:8080/page'
+        )
+        self.assertEqual(code, b'200')
+        body_bytes = await buffered(body)
+        self.assertEqual(body_bytes, b'some-data')
+
+    @async_test
+    async def test_http_post_204_without_content(self):
+
+        async def handle_post(request):
+            await request.content.read()
+            return web.Response(status=204)
+
+        app = web.Application()
+        app.add_routes([
+            web.post('/page', handle_post)
+        ])
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.add_async_cleanup(runner.cleanup)
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+
+        request, close = Pool()
+        self.add_async_cleanup(close)
+        code, _, body = await request(
+            b'POST', 'http://localhost:8080/page'
+        )
+        self.assertEqual(code, b'204')
+        body_bytes = await buffered(body)
+        self.assertEqual(body_bytes, b'')
+
+    @async_test
+    async def test_http_post_204_with_content(self):
+        # Against the spec, but that's the server's fault: we still need to deal with it
+
+        async def handle_post(request):
+            await request.content.read()
+            response = web.StreamResponse(status=204, headers={'content-length': '12'})
+            await response.prepare(request)
+            await response.write(b'some-content')
+            return response
+
+        app = web.Application()
+        app.add_routes([
+            web.post('/page', handle_post)
+        ])
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.add_async_cleanup(runner.cleanup)
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+
+        request, close = Pool()
+        self.add_async_cleanup(close)
+        code, _, body = await request(
+            b'POST', 'http://localhost:8080/page'
+        )
+        self.assertEqual(code, b'204')
+        body_bytes = await buffered(body)
+        self.assertEqual(body_bytes, b'some-content')
+
+    @async_test
     async def test_http_chunked_responses(self):
         response_datas = []
 
