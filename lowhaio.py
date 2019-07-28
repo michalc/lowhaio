@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import ipaddress
+import logging
 import urllib.parse
 import ssl
 import socket
@@ -9,6 +10,7 @@ from aiodnsresolver import (
     TYPES,
     DnsError,
     Resolver,
+    ResolverLoggerAdapter,
 )
 
 
@@ -34,6 +36,13 @@ class HttpDataError(HttpError):
 
 class HttpConnectionClosedError(HttpDataError):
     pass
+
+
+class HttpLoggerAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return \
+            ('[http] %s' % (msg,), kwargs) if not self.extra else \
+            ('[http:%s] %s' % (','.join(str(v) for v in self.extra.values()), msg), kwargs)
 
 
 async def empty_async_iterator():
@@ -78,13 +87,19 @@ def unset_tcp_cork(sock):
     sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)  # pylint: disable=no-member
 
 
-async def send_body_async_gen_bytes(loop, sock, socket_timeout, body, body_args, body_kwargs):
+async def send_body_async_gen_bytes(logger, loop, sock, socket_timeout,
+                                    body, body_args, body_kwargs):
+    logger.debug('Sending body')
+    num_bytes = 0
     async for chunk in body(*body_args, **dict(body_kwargs)):
+        num_bytes += len(chunk)
         await send_all(loop, sock, socket_timeout, chunk)
+    logger.debug('Sent body bytes: %s', num_bytes)
 
 
-async def send_header_tuples_of_bytes(loop, sock, socket_timeout,
+async def send_header_tuples_of_bytes(logger, loop, sock, socket_timeout,
                                       http_version, method, parsed_url, params, headers):
+    logger.debug('Sending header')
     outgoing_qs = urllib.parse.urlencode(params, doseq=True).encode()
     outgoing_path = urllib.parse.quote(parsed_url.path).encode()
     outgoing_path_qs = outgoing_path + \
@@ -99,6 +114,7 @@ async def send_header_tuples_of_bytes(loop, sock, socket_timeout,
             for (key, value) in headers_with_host
         )
     ))
+    logger.debug('Sent header')
 
 
 def Pool(
@@ -114,36 +130,65 @@ def Pool(
         keep_alive_timeout=15,
         recv_bufsize=16384,
         socket_timeout=10,
+        get_logger=lambda: logging.getLogger('lohaio'),
+        get_logger_adapter=HttpLoggerAdapter,
+        get_resolver_logger_adapter=ResolverLoggerAdapter,
 ):
 
     loop = \
         asyncio.get_running_loop() if hasattr(asyncio, 'get_running_loop') else \
         asyncio.get_event_loop()
     ssl_context = get_ssl_context()
-    dns_resolve, dns_resolver_clear_cache = get_dns_resolver()
+
+    logger_extra = {}
+    default_logger = get_logger()
+    logger = get_logger_adapter(default_logger, {})
+
+    def get_chained_logger_adapter(logger, resolve_extra):
+        parent_adapter = get_logger_adapter(logger, logger_extra)
+        return get_resolver_logger_adapter(parent_adapter, resolve_extra)
+
+    dns_resolve, dns_resolver_clear_cache = get_dns_resolver(
+        get_logger_adapter=get_chained_logger_adapter,
+    )
 
     pool = {}
 
     async def request(method, url, params=(), headers=(),
-                      body=empty_async_iterator, body_args=(), body_kwargs=()):
+                      body=empty_async_iterator, body_args=(), body_kwargs=(),
+                      get_logger=lambda: default_logger,
+                      get_logger_adapter=get_logger_adapter,
+                      get_resolver_logger_adapter=get_resolver_logger_adapter,
+                      ):
         parsed_url = urllib.parse.urlsplit(url)
+
+        logger_extra = {'lowhaio_method': method.decode(), 'lowhaio_url': url}
+        logger = get_logger_adapter(get_logger(), logger_extra)
+
+        def get_chained_logger_adapter(logger, resolve_extra):
+            parent_adapter = get_logger_adapter(logger, logger_extra)
+            return get_resolver_logger_adapter(parent_adapter, resolve_extra)
 
         try:
             ip_addresses = (ipaddress.ip_address(parsed_url.hostname),)
         except ValueError:
             try:
-                ip_addresses = await dns_resolve(parsed_url.hostname, TYPES.A)
+                ip_addresses = await dns_resolve(parsed_url.hostname, TYPES.A,
+                                                 get_logger_adapter=get_chained_logger_adapter,
+                                                 )
             except DnsError as exception:
                 raise HttpDnsError() from exception
 
         key = (parsed_url.scheme, parsed_url.netloc)
 
-        sock = get_from_pool(key, ip_addresses)
+        sock = get_from_pool(logger, key, ip_addresses)
 
         if sock is None:
             sock = get_sock()
             try:
+                logger.debug('Connecting: %s', sock)
                 await connect(sock, parsed_url, str(ip_addresses[0]))
+                logger.debug('Connected: %s', sock)
             except Exception as exception:
                 sock.close()
                 raise HttpConnectionError() from exception
@@ -153,8 +198,10 @@ def Pool(
 
             try:
                 if parsed_url.scheme == 'https':
+                    logger.debug('TLS handshake started')
                     sock = tls_wrapped(sock, parsed_url.hostname)
                     await tls_complete_handshake(loop, sock, socket_timeout)
+                    logger.debug('TLS handshake completed')
             except Exception as exception:
                 sock.close()
                 raise HttpTlsError() from exception
@@ -164,13 +211,15 @@ def Pool(
 
         try:
             sock_pre_message(sock)
-            await send_header(loop, sock, socket_timeout, http_version,
+            await send_header(logger, loop, sock, socket_timeout, http_version,
                               method, parsed_url, params, headers)
-            await send_body(loop, sock, socket_timeout, body, body_args, body_kwargs)
+            await send_body(logger, loop, sock, socket_timeout, body, body_args, body_kwargs)
             sock_post_message(sock)
 
-            code, response_headers, body_handler, unprocessed, connection = await recv_header(sock)
-            response_body = response_body_generator(sock, socket_timeout, body_handler,
+            code, response_headers, body_handler, unprocessed, connection = \
+                await recv_header(logger, sock)
+            logger.debug('Received header with code: %s', code)
+            response_body = response_body_generator(logger, sock, socket_timeout, body_handler,
                                                     response_headers, unprocessed, key, connection)
         except Exception as exception:
             sock.close()
@@ -181,10 +230,11 @@ def Pool(
 
         return code, response_headers, response_body
 
-    def get_from_pool(key, ip_addresses):
+    def get_from_pool(logger, key, ip_addresses):
         try:
             socks = pool[key]
         except KeyError:
+            logger.debug('Connection not in pool: %s', key)
             return None
 
         while socks:
@@ -194,9 +244,11 @@ def Pool(
 
             connected_ip = ipaddress.ip_address(_sock.getpeername()[0])
             if connected_ip not in ip_addresses:
+                logger.debug('Not current for domain, closing: %s', _sock)
                 _sock.close()
                 continue
 
+            logger.debug('Reusing connection %s', _sock)
             if _sock.fileno() != -1:
                 return _sock
 
@@ -213,6 +265,7 @@ def Pool(
                                          key, sock)
 
     def close_by_keep_alive_timeout(key, sock):
+        logger.debug('Closing by timeout: %s,%s', key, sock)
         sock.close()
         del pool[key][sock]
         if not pool[key]:
@@ -231,7 +284,7 @@ def Pool(
     def tls_wrapped(sock, host):
         return ssl_context.wrap_socket(sock, server_hostname=host, do_handshake_on_connect=False)
 
-    async def recv_header(sock):
+    async def recv_header(logger, sock):
         unprocessed = b''
         while True:
             unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
@@ -253,36 +306,60 @@ def Pool(
         )
         headers_dict = dict(response_headers)
         transfer_encoding = headers_dict.get(b'transfer-encoding', b'identity')
+        logger.debug('Effective transfer-encoding: %s', transfer_encoding)
         connection = \
             b'close' if keep_alive_timeout == 0 else \
             headers_dict.get(b'connection', b'keep-alive').lower() if version == b'1.1' else \
             headers_dict.get(b'connection', b'close').lower()
+        logger.debug('Effective connection: %s', connection)
         body_handler = transfer_encoding_handler(transfer_encoding)
 
         return code, response_headers, body_handler, unprocessed, connection
 
-    async def response_body_generator(sock, socket_timeout, body_handler, response_headers,
+    async def response_body_generator(logger, sock, socket_timeout, body_handler, response_headers,
                                       unprocessed, key, connection):
         try:
-            generator = body_handler(loop, sock, socket_timeout, recv_bufsize,
+            generator = body_handler(logger, loop, sock, socket_timeout, recv_bufsize,
                                      response_headers, connection, unprocessed)
             unprocessed = None  # So can be garbage collected
 
+            logger.debug('Receiving body')
+            num_bytes = 0
             async for chunk in generator:
                 yield chunk
+                num_bytes += len(chunk)
+            logger.debug('Received transfer-decoded body bytes: %s', num_bytes)
         except BaseException:
             sock.close()
             raise
         else:
             if connection == b'keep-alive':
+                logger.debug('Keeping connection alive: %s', sock)
                 add_to_pool(key, sock)
             else:
+                logger.debug('Closing connection: %s', sock)
                 sock.close()
 
-    async def close():
-        await dns_resolver_clear_cache()
-        for socks in pool.values():
+    async def close(
+            get_logger=lambda: default_logger,
+            get_logger_adapter=get_logger_adapter,
+            get_resolver_logger_adapter=get_resolver_logger_adapter,
+    ):
+        logger_extra = {}
+        logger = get_logger_adapter(get_logger(), logger_extra)
+
+        logger.debug('Closing pool')
+
+        def get_chained_logger_adapter(logger, resolve_extra):
+            parent_adapter = get_logger_adapter(logger, logger_extra)
+            return get_resolver_logger_adapter(parent_adapter, resolve_extra)
+
+        await dns_resolver_clear_cache(
+            get_logger_adapter=get_chained_logger_adapter,
+        )
+        for key, socks in pool.items():
             for sock, close_callback in socks.items():
+                logger.debug('Closing: %s,%s', key, sock)
                 close_callback.cancel()
                 sock.close()
         pool.clear()
@@ -290,7 +367,7 @@ def Pool(
     return request, close
 
 
-def identity_handler(loop, sock, socket_timeout, recv_bufsize,
+def identity_handler(logger, loop, sock, socket_timeout, recv_bufsize,
                      response_headers, connection, unprocessed):
     response_headers_dict = dict(response_headers)
     body_length = \
@@ -299,13 +376,15 @@ def identity_handler(loop, sock, socket_timeout, recv_bufsize,
         int(response_headers_dict[b'content-length'])
     return \
         identity_handler_known_body_length(
-            loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed) \
+            logger, loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed) \
         if body_length is not None else \
-        identity_handler_unknown_body_length(loop, sock, socket_timeout, recv_bufsize, unprocessed)
+        identity_handler_unknown_body_length(
+            logger, loop, sock, socket_timeout, recv_bufsize, unprocessed)
 
 
 async def identity_handler_known_body_length(
-        loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed):
+        logger, loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed):
+    logger.debug('Expected incoming body bytes: %s', body_length)
     total_remaining = body_length
 
     if unprocessed and total_remaining:
@@ -320,7 +399,8 @@ async def identity_handler_known_body_length(
 
 
 async def identity_handler_unknown_body_length(
-        loop, sock, socket_timeout, recv_bufsize, unprocessed):
+        logger, loop, sock, socket_timeout, recv_bufsize, unprocessed):
+    logger.debug('Unknown incoming body length')
     if unprocessed:
         yield unprocessed
 
@@ -333,7 +413,7 @@ async def identity_handler_unknown_body_length(
         pass
 
 
-async def chunked_handler(loop, sock, socket_timeout, recv_bufsize, _, __, unprocessed):
+async def chunked_handler(_, loop, sock, socket_timeout, recv_bufsize, __, ___, unprocessed):
     while True:
         # Fetch until have chunk header
         while b'\r\n' not in unprocessed:
