@@ -45,6 +45,17 @@ class HttpLoggerAdapter(logging.LoggerAdapter):
             ('[http:%s] %s' % (','.join(str(v) for v in self.extra.values()), msg), kwargs)
 
 
+def get_logger_adapter_default(extra):
+    return HttpLoggerAdapter(logging.getLogger('lowhaio'), extra)
+
+
+def get_resolver_logger_adapter_default(http_extra):
+    def _get_resolver_logger_adapter_default(resolver_extra):
+        http_adapter = HttpLoggerAdapter(logging.getLogger('aiodnsresolver'), http_extra)
+        return ResolverLoggerAdapter(http_adapter, resolver_extra)
+    return _get_resolver_logger_adapter_default
+
+
 async def empty_async_iterator():
     while False:
         yield
@@ -130,9 +141,8 @@ def Pool(
         keep_alive_timeout=15,
         recv_bufsize=16384,
         socket_timeout=10,
-        get_logger=lambda: logging.getLogger('lohaio'),
-        get_logger_adapter=HttpLoggerAdapter,
-        get_resolver_logger_adapter=ResolverLoggerAdapter,
+        get_logger_adapter=get_logger_adapter_default,
+        get_resolver_logger_adapter=get_resolver_logger_adapter_default,
 ):
 
     loop = \
@@ -141,41 +151,32 @@ def Pool(
     ssl_context = get_ssl_context()
 
     logger_extra = {}
-    default_logger = get_logger()
-    logger = get_logger_adapter(default_logger, {})
-
-    def get_chained_logger_adapter(logger, resolve_extra):
-        parent_adapter = get_logger_adapter(logger, logger_extra)
-        return get_resolver_logger_adapter(parent_adapter, resolve_extra)
+    logger = get_logger_adapter({})
 
     dns_resolve, dns_resolver_clear_cache = get_dns_resolver(
-        get_logger_adapter=get_chained_logger_adapter,
+        get_logger_adapter=get_resolver_logger_adapter_default(logger_extra),
     )
 
     pool = {}
 
     async def request(method, url, params=(), headers=(),
                       body=empty_async_iterator, body_args=(), body_kwargs=(),
-                      get_logger=lambda: default_logger,
                       get_logger_adapter=get_logger_adapter,
                       get_resolver_logger_adapter=get_resolver_logger_adapter,
                       ):
         parsed_url = urllib.parse.urlsplit(url)
 
         logger_extra = {'lowhaio_method': method.decode(), 'lowhaio_url': url}
-        logger = get_logger_adapter(get_logger(), logger_extra)
-
-        def get_chained_logger_adapter(logger, resolve_extra):
-            parent_adapter = get_logger_adapter(logger, logger_extra)
-            return get_resolver_logger_adapter(parent_adapter, resolve_extra)
+        logger = get_logger_adapter(logger_extra)
 
         try:
             ip_addresses = (ipaddress.ip_address(parsed_url.hostname),)
         except ValueError:
             try:
-                ip_addresses = await dns_resolve(parsed_url.hostname, TYPES.A,
-                                                 get_logger_adapter=get_chained_logger_adapter,
-                                                 )
+                ip_addresses = await dns_resolve(
+                    parsed_url.hostname, TYPES.A,
+                    get_logger_adapter=get_resolver_logger_adapter(logger_extra),
+                )
             except DnsError as exception:
                 raise HttpDnsError() from exception
 
@@ -341,21 +342,16 @@ def Pool(
                 sock.close()
 
     async def close(
-            get_logger=lambda: default_logger,
             get_logger_adapter=get_logger_adapter,
             get_resolver_logger_adapter=get_resolver_logger_adapter,
     ):
         logger_extra = {}
-        logger = get_logger_adapter(get_logger(), logger_extra)
+        logger = get_logger_adapter(logger_extra)
 
         logger.debug('Closing pool')
 
-        def get_chained_logger_adapter(logger, resolve_extra):
-            parent_adapter = get_logger_adapter(logger, logger_extra)
-            return get_resolver_logger_adapter(parent_adapter, resolve_extra)
-
         await dns_resolver_clear_cache(
-            get_logger_adapter=get_chained_logger_adapter,
+            get_logger_adapter=get_resolver_logger_adapter(logger_extra),
         )
         for key, socks in pool.items():
             for sock, close_callback in socks.items():

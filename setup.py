@@ -20,7 +20,7 @@ setuptools.setup(
     ],
     python_requires='>=3.6.3',
     install_requires=[
-        'aiodnsresolver>=0.0.148',
+        'aiodnsresolver>=0.0.149',
     ],
     test_suite='test',
     tests_require=[
