@@ -421,6 +421,35 @@ class TestIntegration(unittest.TestCase):
             await at_10
         self.assertIsInstance(cm.exception.__cause__, asyncio.TimeoutError)
 
+    @async_test
+    async def test_cancel_raised_cancelled_error(self):
+        app = web.Application()
+
+        request_made = asyncio.Event()
+
+        async def handle_get(_):
+            request_made.set()
+            await asyncio.Future()
+
+        app.add_routes([
+            web.get('/page', handle_get)
+        ])
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.add_async_cleanup(runner.cleanup)
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+
+        request, close = Pool()
+        self.add_async_cleanup(close)
+
+        request = asyncio.ensure_future(request(b'GET', 'http://localhost:8080/page'))
+        await request_made.wait()
+        request.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await request
+
 
 class TestEndToEnd(unittest.TestCase):
 

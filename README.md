@@ -75,9 +75,9 @@ The only header automatically added to requests is the `host` header, which is t
 
 ## Exceptions
 
-Exceptions raised are subclasses of `HttpError`. If a lower-level exception caused this, it is set in the `__cause__` attribute of the `HttpError`
+Exceptions are usually subclasses of `HttpError`. If a lower-level exception caused this, it is set in the `__cause__` attribute of the `HttpError`. Specifically, before any data is sent `HttpConnectionError` is raised, and after data is sent, `HttpDataError` is raised. This difference is to make it possible to know if non-idempotent requests can be retried.
 
-Exceptions before any data is sent are instances of `HttpConnectionError`, and after data is sent, `HttpDataError`. This is to make it possible to know if non-idempotent requests can be retried.
+However, `asyncio.CancelledError` and exceptions that do not directive from `Exception`, such as `SystemExit`, are allowed to bubble up.
 
 
 ## Custom SSL context

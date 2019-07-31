@@ -190,6 +190,9 @@ def Pool(
                 logger.debug('Connecting: %s', sock)
                 await connect(sock, parsed_url, str(ip_addresses[0]))
                 logger.debug('Connected: %s', sock)
+            except asyncio.CancelledError:
+                sock.close()
+                raise
             except Exception as exception:
                 sock.close()
                 raise HttpConnectionError() from exception
@@ -203,6 +206,9 @@ def Pool(
                     sock = tls_wrapped(sock, parsed_url.hostname)
                     await tls_complete_handshake(loop, sock, socket_timeout)
                     logger.debug('TLS handshake completed')
+            except asyncio.CancelledError:
+                sock.close()
+                raise
             except Exception as exception:
                 sock.close()
                 raise HttpTlsError() from exception
@@ -222,6 +228,9 @@ def Pool(
             logger.debug('Received header with code: %s', code)
             response_body = response_body_generator(logger, sock, socket_timeout, body_handler,
                                                     response_headers, unprocessed, key, connection)
+        except asyncio.CancelledError:
+            sock.close()
+            raise
         except Exception as exception:
             sock.close()
             raise HttpDataError() from exception
