@@ -155,6 +155,31 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(code, b'200')
 
     @async_test
+    async def test_http_head_200_chunked(self):
+
+        async def handle_head(request):
+            await request.content.read()
+            return web.Response(status=200, headers={'transfer-encoding': 'chunked'})
+
+        app = web.Application()
+        app.add_routes([
+            web.head('/page', handle_head)
+        ])
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.add_async_cleanup(runner.cleanup)
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+
+        request, close = Pool()
+        self.add_async_cleanup(close)
+        code, _, body = await request(
+            b'HEAD', 'http://localhost:8080/page'
+        )
+        await buffered(body)
+        self.assertEqual(code, b'200')
+
+    @async_test
     async def test_http_post_204_without_content(self):
 
         async def handle_post(request):

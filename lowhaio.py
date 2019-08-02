@@ -224,7 +224,7 @@ def Pool(
             sock_post_message(sock)
 
             code, response_headers, body_handler, unprocessed, connection = \
-                await recv_header(logger, sock)
+                await recv_header(logger, sock, method)
             logger.debug('Received header with code: %s', code)
             response_body = response_body_generator(logger, sock, socket_timeout, body_handler,
                                                     method, response_headers, unprocessed, key,
@@ -295,7 +295,7 @@ def Pool(
     def tls_wrapped(sock, host):
         return ssl_context.wrap_socket(sock, server_hostname=host, do_handshake_on_connect=False)
 
-    async def recv_header(logger, sock):
+    async def recv_header(logger, sock, method):
         unprocessed = b''
         while True:
             unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
@@ -323,7 +323,9 @@ def Pool(
             headers_dict.get(b'connection', b'keep-alive').lower() if version == b'1.1' else \
             headers_dict.get(b'connection', b'close').lower()
         logger.debug('Effective connection: %s', connection)
-        body_handler = transfer_encoding_handler(transfer_encoding)
+        body_handler = \
+            identity_handler if method == b'HEAD' else \
+            transfer_encoding_handler(transfer_encoding)
 
         return code, response_headers, body_handler, unprocessed, connection
 
