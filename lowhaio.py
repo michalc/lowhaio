@@ -217,13 +217,10 @@ def Pool(
 
             code, response_headers, unprocessed, transfer_encoding, connection = \
                 await recv_header(logger, sock)
-            body_handler = \
-                identity_handler if (method == b'HEAD' or transfer_encoding == b'identity') else \
-                chunked_handler
             logger.debug('Received header with code: %s', code)
-            response_body = response_body_generator(logger, sock, socket_timeout, body_handler,
-                                                    method, response_headers, unprocessed, key,
-                                                    connection)
+            response_body = response_body_generator(
+                logger, sock, socket_timeout, method,
+                response_headers, unprocessed, key, transfer_encoding, connection)
         except asyncio.CancelledError:
             sock.close()
             raise
@@ -321,8 +318,12 @@ def Pool(
 
         return code, response_headers, unprocessed, transfer_encoding, connection
 
-    async def response_body_generator(logger, sock, socket_timeout, body_handler, method,
-                                      response_headers, unprocessed, key, connection):
+    async def response_body_generator(
+            logger, sock, socket_timeout, method,
+            response_headers, unprocessed, key, transfer_encoding, connection):
+        body_handler = \
+            identity_handler if (method == b'HEAD' or transfer_encoding == b'identity') else \
+            chunked_handler
         try:
             generator = body_handler(logger, loop, sock, socket_timeout, recv_bufsize, method,
                                      response_headers, connection, unprocessed)
