@@ -76,13 +76,6 @@ async def buffered(data):
     return b''.join([chunk async for chunk in data])
 
 
-def identity_or_chunked_handler(transfer_encoding):
-    return {
-        b'chunked': chunked_handler,
-        b'identity': identity_handler,
-    }[transfer_encoding]
-
-
 def get_nonblocking_sock():
     sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
     sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
@@ -132,7 +125,6 @@ def Pool(
         get_dns_resolver=Resolver,
         get_sock=get_nonblocking_sock,
         get_ssl_context=ssl.create_default_context,
-        transfer_encoding_handler=identity_or_chunked_handler,
         sock_pre_message=set_tcp_cork if hasattr(socket, 'TCP_CORK') else lambda _: None,
         sock_post_message=unset_tcp_cork if hasattr(socket, 'TCP_CORK') else lambda _: None,
         send_header=send_header_tuples_of_bytes,
@@ -324,8 +316,8 @@ def Pool(
             headers_dict.get(b'connection', b'close').lower()
         logger.debug('Effective connection: %s', connection)
         body_handler = \
-            identity_handler if method == b'HEAD' else \
-            transfer_encoding_handler(transfer_encoding)
+            identity_handler if (method == b'HEAD' or transfer_encoding == b'identity') else \
+            chunked_handler
 
         return code, response_headers, body_handler, unprocessed, connection
 
