@@ -38,6 +38,10 @@ class HttpConnectionClosedError(HttpDataError):
     pass
 
 
+class HttpHeaderTooLong(HttpDataError):
+    pass
+
+
 class HttpLoggerAdapter(logging.LoggerAdapter):
     def process(self, msg, kwargs):
         return \
@@ -132,6 +136,7 @@ def Pool(
         http_version=b'HTTP/1.1',
         keep_alive_timeout=15,
         recv_bufsize=16384,
+        max_header_length=16384,
         socket_timeout=10,
         get_logger_adapter=get_logger_adapter_default,
         get_resolver_logger_adapter=get_resolver_logger_adapter_default,
@@ -227,6 +232,8 @@ def Pool(
             raise
         except Exception as exception:
             sock.close()
+            if isinstance(exception, HttpDataError):
+                raise
             raise HttpDataError() from exception
         except BaseException:
             sock.close()
@@ -295,6 +302,8 @@ def Pool(
             try:
                 header_end = unprocessed.index(b'\r\n\r\n')
             except ValueError:
+                if len(unprocessed) >= max_header_length:
+                    raise HttpHeaderTooLong()
                 continue
             else:
                 break
@@ -313,8 +322,8 @@ def Pool(
     async def response_body_generator(
             logger, sock, socket_timeout, unprocessed, key, connection, body_length, body_handler):
         try:
-            generator = body_handler(
-                logger, loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed)
+            generator = body_handler(logger, loop, sock, socket_timeout, recv_bufsize,
+                                     max_header_length, body_length, unprocessed)
             unprocessed = None  # So can be garbage collected
 
             logger.debug('Receiving body')
@@ -378,7 +387,8 @@ def Pool(
     return request, close
 
 
-def identity_handler(logger, loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed):
+def identity_handler(logger, loop, sock, socket_timeout, recv_bufsize, _,
+                     body_length, unprocessed):
     return \
         identity_handler_known_body_length(
             logger, loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed) \
@@ -418,10 +428,13 @@ async def identity_handler_unknown_body_length(
         pass
 
 
-async def chunked_handler(_, loop, sock, socket_timeout, recv_bufsize, __, unprocessed):
+async def chunked_handler(_, loop, sock, socket_timeout, recv_bufsize, max_header_length,
+                          __, unprocessed):
     while True:
         # Fetch until have chunk header
         while b'\r\n' not in unprocessed:
+            if len(unprocessed) >= max_header_length:
+                raise HttpHeaderTooLong()
             unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
 
         # Find chunk length
@@ -432,7 +445,10 @@ async def chunked_handler(_, loop, sock, socket_timeout, recv_bufsize, __, unpro
         # End of body signalled by a 0-length chunk
         if chunk_length == 0:
             while b'\r\n\r\n' not in unprocessed:
+                if len(unprocessed) >= max_header_length:
+                    raise HttpHeaderTooLong()
                 unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
+
             break
 
         # Remove chunk header
