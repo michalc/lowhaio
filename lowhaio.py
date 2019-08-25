@@ -217,14 +217,11 @@ def Pool(
 
             code, version, response_headers, unprocessed = await recv_header(sock)
             logger.debug('Received header with code: %s', code)
-            connection, transfer_encoding = connection_transfer_encoding(
-                logger, version, response_headers)
-            body_handler = \
-                identity_handler if (method == b'HEAD' or transfer_encoding == b'identity') else \
-                chunked_handler
+            connection, body_length, body_handler = connection_length_body_handler(
+                logger, method, version, response_headers)
             response_body = response_body_generator(
                 logger, sock, socket_timeout,
-                method, response_headers, unprocessed, key, connection, body_handler)
+                unprocessed, key, connection, body_length, body_handler)
         except asyncio.CancelledError:
             sock.close()
             raise
@@ -314,11 +311,10 @@ def Pool(
         return code, version, response_headers, unprocessed
 
     async def response_body_generator(
-            logger, sock, socket_timeout,
-            method, response_headers, unprocessed, key, connection, body_handler):
+            logger, sock, socket_timeout, unprocessed, key, connection, body_length, body_handler):
         try:
-            generator = body_handler(logger, loop, sock, socket_timeout, recv_bufsize, method,
-                                     response_headers, connection, unprocessed)
+            generator = body_handler(
+                logger, loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed)
             unprocessed = None  # So can be garbage collected
 
             logger.debug('Receiving body')
@@ -338,7 +334,7 @@ def Pool(
                 logger.debug('Closing connection: %s', sock)
                 sock.close()
 
-    def connection_transfer_encoding(logger, version, response_headers):
+    def connection_length_body_handler(logger, method, version, response_headers):
         headers_dict = dict(response_headers)
         transfer_encoding = headers_dict.get(b'transfer-encoding', b'identity')
         logger.debug('Effective transfer-encoding: %s', transfer_encoding)
@@ -347,7 +343,18 @@ def Pool(
             headers_dict.get(b'connection', b'keep-alive').lower() if version == b'1.1' else \
             headers_dict.get(b'connection', b'close').lower()
         logger.debug('Effective connection: %s', connection)
-        return connection, transfer_encoding
+
+        body_length = \
+            0 if method == b'HEAD' else \
+            0 if connection == b'keep-alive' and b'content-length' not in headers_dict else \
+            None if b'content-length' not in headers_dict else \
+            int(headers_dict[b'content-length'])
+
+        body_handler = \
+            identity_handler if (method == b'HEAD' or transfer_encoding == b'identity') else \
+            chunked_handler
+
+        return connection, body_length, body_handler
 
     async def close(
             get_logger_adapter=get_logger_adapter,
@@ -371,14 +378,7 @@ def Pool(
     return request, close
 
 
-def identity_handler(logger, loop, sock, socket_timeout, recv_bufsize,
-                     method, response_headers, connection, unprocessed):
-    response_headers_dict = dict(response_headers)
-    body_length = \
-        0 if method == b'HEAD' else \
-        0 if connection == b'keep-alive' and b'content-length' not in response_headers_dict else \
-        None if b'content-length' not in response_headers_dict else \
-        int(response_headers_dict[b'content-length'])
+def identity_handler(logger, loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed):
     return \
         identity_handler_known_body_length(
             logger, loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed) \
@@ -418,7 +418,7 @@ async def identity_handler_unknown_body_length(
         pass
 
 
-async def chunked_handler(_, loop, sock, socket_timeout, recv_bufsize, __, ___, ____, unprocessed):
+async def chunked_handler(_, loop, sock, socket_timeout, recv_bufsize, __, unprocessed):
     while True:
         # Fetch until have chunk header
         while b'\r\n' not in unprocessed:
