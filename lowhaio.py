@@ -321,7 +321,7 @@ def Pool(
     async def response_body_generator(
             logger, sock, unprocessed, key, connection, body_length, body_handler):
         try:
-            generator = body_handler(logger, sock, max_header_length, body_length, unprocessed)
+            generator = body_handler(logger, sock, body_length, unprocessed)
             unprocessed = None  # So can be garbage collected
 
             logger.debug('Receiving body')
@@ -357,17 +357,13 @@ def Pool(
             None if b'content-length' not in headers_dict else \
             int(headers_dict[b'content-length'])
 
+        uses_identity = (method == b'HEAD' or transfer_encoding == b'identity')
         body_handler = \
-            identity_handler if (method == b'HEAD' or transfer_encoding == b'identity') else \
+            identity_handler_known_body_length if uses_identity and body_length is not None else \
+            identity_handler_unknown_body_length if uses_identity else \
             chunked_handler
 
         return connection, body_length, body_handler
-
-    def identity_handler(logger, sock, _, body_length, unprocessed):
-        return \
-            identity_handler_known_body_length(logger, sock, body_length, unprocessed) \
-            if body_length is not None else \
-            identity_handler_unknown_body_length(logger, sock, unprocessed)
 
     async def identity_handler_known_body_length(logger, sock, body_length, unprocessed):
         logger.debug('Expected incoming body bytes: %s', body_length)
@@ -384,7 +380,7 @@ def Pool(
             total_remaining -= len(unprocessed)
             yield unprocessed
 
-    async def identity_handler_unknown_body_length(logger, sock, unprocessed):
+    async def identity_handler_unknown_body_length(logger, sock, _, unprocessed):
         logger.debug('Unknown incoming body length')
         if unprocessed:
             yield unprocessed
@@ -397,7 +393,7 @@ def Pool(
         except HttpConnectionClosedError:
             pass
 
-    async def chunked_handler(_, sock, max_header_length, __, unprocessed):
+    async def chunked_handler(_, sock, __, unprocessed):
         while True:
             # Fetch until have chunk header
             while b'\r\n' not in unprocessed:
