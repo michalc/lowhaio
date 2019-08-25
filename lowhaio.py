@@ -215,12 +215,16 @@ def Pool(
             await send_body(logger, loop, sock, socket_timeout, body, body_args, body_kwargs)
             sock_post_message(sock)
 
-            code, response_headers, unprocessed, transfer_encoding, connection = \
-                await recv_header(logger, sock)
+            code, version, response_headers, unprocessed = await recv_header(sock)
             logger.debug('Received header with code: %s', code)
+            connection, transfer_encoding = connection_transfer_encoding(
+                logger, version, response_headers)
+            body_handler = \
+                identity_handler if (method == b'HEAD' or transfer_encoding == b'identity') else \
+                chunked_handler
             response_body = response_body_generator(
-                logger, sock, socket_timeout, method,
-                response_headers, unprocessed, key, transfer_encoding, connection)
+                logger, sock, socket_timeout,
+                method, response_headers, unprocessed, key, connection, body_handler)
         except asyncio.CancelledError:
             sock.close()
             raise
@@ -287,7 +291,7 @@ def Pool(
     def tls_wrapped(sock, host):
         return ssl_context.wrap_socket(sock, server_hostname=host, do_handshake_on_connect=False)
 
-    async def recv_header(logger, sock):
+    async def recv_header(sock):
         unprocessed = b''
         while True:
             unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
@@ -307,23 +311,11 @@ def Pool(
             for line in lines[1:]
             for (key, _, value) in (line.partition(b':'),)
         )
-        headers_dict = dict(response_headers)
-        transfer_encoding = headers_dict.get(b'transfer-encoding', b'identity')
-        logger.debug('Effective transfer-encoding: %s', transfer_encoding)
-        connection = \
-            b'close' if keep_alive_timeout == 0 else \
-            headers_dict.get(b'connection', b'keep-alive').lower() if version == b'1.1' else \
-            headers_dict.get(b'connection', b'close').lower()
-        logger.debug('Effective connection: %s', connection)
-
-        return code, response_headers, unprocessed, transfer_encoding, connection
+        return code, version, response_headers, unprocessed
 
     async def response_body_generator(
-            logger, sock, socket_timeout, method,
-            response_headers, unprocessed, key, transfer_encoding, connection):
-        body_handler = \
-            identity_handler if (method == b'HEAD' or transfer_encoding == b'identity') else \
-            chunked_handler
+            logger, sock, socket_timeout,
+            method, response_headers, unprocessed, key, connection, body_handler):
         try:
             generator = body_handler(logger, loop, sock, socket_timeout, recv_bufsize, method,
                                      response_headers, connection, unprocessed)
@@ -345,6 +337,17 @@ def Pool(
             else:
                 logger.debug('Closing connection: %s', sock)
                 sock.close()
+
+    def connection_transfer_encoding(logger, version, response_headers):
+        headers_dict = dict(response_headers)
+        transfer_encoding = headers_dict.get(b'transfer-encoding', b'identity')
+        logger.debug('Effective transfer-encoding: %s', transfer_encoding)
+        connection = \
+            b'close' if keep_alive_timeout == 0 else \
+            headers_dict.get(b'connection', b'keep-alive').lower() if version == b'1.1' else \
+            headers_dict.get(b'connection', b'close').lower()
+        logger.debug('Effective connection: %s', connection)
+        return connection, transfer_encoding
 
     async def close(
             get_logger_adapter=get_logger_adapter,
