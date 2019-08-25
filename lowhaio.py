@@ -225,8 +225,7 @@ def Pool(
             connection, body_length, body_handler = connection_length_body_handler(
                 logger, method, version, response_headers)
             response_body = response_body_generator(
-                logger, sock, socket_timeout,
-                unprocessed, key, connection, body_length, body_handler)
+                logger, sock, unprocessed, key, connection, body_length, body_handler)
         except asyncio.CancelledError:
             sock.close()
             raise
@@ -320,10 +319,9 @@ def Pool(
         return code, version, response_headers, unprocessed
 
     async def response_body_generator(
-            logger, sock, socket_timeout, unprocessed, key, connection, body_length, body_handler):
+            logger, sock, unprocessed, key, connection, body_length, body_handler):
         try:
-            generator = body_handler(logger, sock, socket_timeout, recv_bufsize,
-                                     max_header_length, body_length, unprocessed)
+            generator = body_handler(logger, sock, max_header_length, body_length, unprocessed)
             unprocessed = None  # So can be garbage collected
 
             logger.debug('Receiving body')
@@ -365,16 +363,13 @@ def Pool(
 
         return connection, body_length, body_handler
 
-    def identity_handler(logger, sock, socket_timeout, recv_bufsize, _, body_length, unprocessed):
+    def identity_handler(logger, sock, _, body_length, unprocessed):
         return \
-            identity_handler_known_body_length(
-                logger, sock, socket_timeout, recv_bufsize, body_length, unprocessed) \
+            identity_handler_known_body_length(logger, sock, body_length, unprocessed) \
             if body_length is not None else \
-            identity_handler_unknown_body_length(
-                logger, sock, socket_timeout, recv_bufsize, unprocessed)
+            identity_handler_unknown_body_length(logger, sock, unprocessed)
 
-    async def identity_handler_known_body_length(
-            logger, sock, socket_timeout, recv_bufsize, body_length, unprocessed):
+    async def identity_handler_known_body_length(logger, sock, body_length, unprocessed):
         logger.debug('Expected incoming body bytes: %s', body_length)
         total_remaining = body_length
 
@@ -389,8 +384,7 @@ def Pool(
             total_remaining -= len(unprocessed)
             yield unprocessed
 
-    async def identity_handler_unknown_body_length(
-            logger, sock, socket_timeout, recv_bufsize, unprocessed):
+    async def identity_handler_unknown_body_length(logger, sock, unprocessed):
         logger.debug('Unknown incoming body length')
         if unprocessed:
             yield unprocessed
@@ -403,8 +397,7 @@ def Pool(
         except HttpConnectionClosedError:
             pass
 
-    async def chunked_handler(_, sock, socket_timeout, recv_bufsize, max_header_length,
-                              __, unprocessed):
+    async def chunked_handler(_, sock, max_header_length, __, unprocessed):
         while True:
             # Fetch until have chunk header
             while b'\r\n' not in unprocessed:
