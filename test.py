@@ -14,6 +14,7 @@ from aiohttp import (
 
 from lowhaio import (
     HttpDataError,
+    HttpHeaderTooLong,
     HttpTlsError,
     Pool,
     buffered,
@@ -71,6 +72,31 @@ class TestIntegration(unittest.TestCase):
         async for _ in body:
             pass
         self.assertEqual(posted_data_received, b'abc' * 1000000 * 10)
+
+    @async_test
+    async def test_http_large_header(self):
+        posted_data_received = b''
+
+        async def handle_get(request):
+            nonlocal posted_data_received
+            posted_data_received = await request.content.read()
+            return web.Response(status=200, headers={'example': 'b' * 32000})
+
+        app = web.Application()
+        app.add_routes([
+            web.get('/page', handle_get)
+        ])
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.add_async_cleanup(runner.cleanup)
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+
+        request, close = Pool()
+        self.add_async_cleanup(close)
+
+        with self.assertRaises(HttpHeaderTooLong):
+            await request(b'GET', 'http://localhost:8080/page')
 
     @async_test
     async def test_http_delete_200_no_content_length_no_body_keep_alive(self):

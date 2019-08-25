@@ -38,6 +38,10 @@ class HttpConnectionClosedError(HttpDataError):
     pass
 
 
+class HttpHeaderTooLong(HttpDataError):
+    pass
+
+
 class HttpLoggerAdapter(logging.LoggerAdapter):
     def process(self, msg, kwargs):
         return \
@@ -74,13 +78,6 @@ def streamed(data):
 
 async def buffered(data):
     return b''.join([chunk async for chunk in data])
-
-
-def identity_or_chunked_handler(transfer_encoding):
-    return {
-        b'chunked': chunked_handler,
-        b'identity': identity_handler,
-    }[transfer_encoding]
 
 
 def get_nonblocking_sock():
@@ -132,7 +129,6 @@ def Pool(
         get_dns_resolver=Resolver,
         get_sock=get_nonblocking_sock,
         get_ssl_context=ssl.create_default_context,
-        transfer_encoding_handler=identity_or_chunked_handler,
         sock_pre_message=set_tcp_cork if hasattr(socket, 'TCP_CORK') else lambda _: None,
         sock_post_message=unset_tcp_cork if hasattr(socket, 'TCP_CORK') else lambda _: None,
         send_header=send_header_tuples_of_bytes,
@@ -140,6 +136,7 @@ def Pool(
         http_version=b'HTTP/1.1',
         keep_alive_timeout=15,
         recv_bufsize=16384,
+        max_header_length=16384,
         socket_timeout=10,
         get_logger_adapter=get_logger_adapter_default,
         get_resolver_logger_adapter=get_resolver_logger_adapter_default,
@@ -223,17 +220,19 @@ def Pool(
             await send_body(logger, loop, sock, socket_timeout, body, body_args, body_kwargs)
             sock_post_message(sock)
 
-            code, response_headers, body_handler, unprocessed, connection = \
-                await recv_header(logger, sock, method)
+            code, version, response_headers, unprocessed = await recv_header(sock)
             logger.debug('Received header with code: %s', code)
-            response_body = response_body_generator(logger, sock, socket_timeout, body_handler,
-                                                    method, response_headers, unprocessed, key,
-                                                    connection)
+            connection, body_length, body_handler = connection_length_body_handler(
+                logger, method, version, response_headers)
+            response_body = response_body_generator(
+                logger, sock, unprocessed, key, connection, body_length, body_handler)
         except asyncio.CancelledError:
             sock.close()
             raise
         except Exception as exception:
             sock.close()
+            if isinstance(exception, HttpDataError):
+                raise
             raise HttpDataError() from exception
         except BaseException:
             sock.close()
@@ -295,13 +294,15 @@ def Pool(
     def tls_wrapped(sock, host):
         return ssl_context.wrap_socket(sock, server_hostname=host, do_handshake_on_connect=False)
 
-    async def recv_header(logger, sock, method):
+    async def recv_header(sock):
         unprocessed = b''
         while True:
             unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
             try:
                 header_end = unprocessed.index(b'\r\n\r\n')
             except ValueError:
+                if len(unprocessed) >= max_header_length:
+                    raise HttpHeaderTooLong()
                 continue
             else:
                 break
@@ -315,25 +316,12 @@ def Pool(
             for line in lines[1:]
             for (key, _, value) in (line.partition(b':'),)
         )
-        headers_dict = dict(response_headers)
-        transfer_encoding = headers_dict.get(b'transfer-encoding', b'identity')
-        logger.debug('Effective transfer-encoding: %s', transfer_encoding)
-        connection = \
-            b'close' if keep_alive_timeout == 0 else \
-            headers_dict.get(b'connection', b'keep-alive').lower() if version == b'1.1' else \
-            headers_dict.get(b'connection', b'close').lower()
-        logger.debug('Effective connection: %s', connection)
-        body_handler = \
-            identity_handler if method == b'HEAD' else \
-            transfer_encoding_handler(transfer_encoding)
+        return code, version, response_headers, unprocessed
 
-        return code, response_headers, body_handler, unprocessed, connection
-
-    async def response_body_generator(logger, sock, socket_timeout, body_handler, method,
-                                      response_headers, unprocessed, key, connection):
+    async def response_body_generator(
+            logger, sock, unprocessed, key, connection, body_length, body_handler):
         try:
-            generator = body_handler(logger, loop, sock, socket_timeout, recv_bufsize, method,
-                                     response_headers, connection, unprocessed)
+            generator = body_handler(logger, sock, body_length, unprocessed)
             unprocessed = None  # So can be garbage collected
 
             logger.debug('Receiving body')
@@ -352,6 +340,105 @@ def Pool(
             else:
                 logger.debug('Closing connection: %s', sock)
                 sock.close()
+
+    def connection_length_body_handler(logger, method, version, response_headers):
+        headers_dict = dict(response_headers)
+        transfer_encoding = headers_dict.get(b'transfer-encoding', b'identity')
+        logger.debug('Effective transfer-encoding: %s', transfer_encoding)
+        connection = \
+            b'close' if keep_alive_timeout == 0 else \
+            headers_dict.get(b'connection', b'keep-alive').lower() if version == b'1.1' else \
+            headers_dict.get(b'connection', b'close').lower()
+        logger.debug('Effective connection: %s', connection)
+
+        body_length = \
+            0 if method == b'HEAD' else \
+            0 if connection == b'keep-alive' and b'content-length' not in headers_dict else \
+            None if b'content-length' not in headers_dict else \
+            int(headers_dict[b'content-length'])
+
+        uses_identity = (method == b'HEAD' or transfer_encoding == b'identity')
+        body_handler = \
+            identity_handler_known_body_length if uses_identity and body_length is not None else \
+            identity_handler_unknown_body_length if uses_identity else \
+            chunked_handler
+
+        return connection, body_length, body_handler
+
+    async def identity_handler_known_body_length(logger, sock, body_length, unprocessed):
+        logger.debug('Expected incoming body bytes: %s', body_length)
+        total_remaining = body_length
+
+        if unprocessed and total_remaining:
+            total_remaining -= len(unprocessed)
+            yield unprocessed
+
+        while total_remaining:
+            unprocessed = None  # So can be garbage collected
+            unprocessed = await recv(loop, sock, socket_timeout,
+                                     min(recv_bufsize, total_remaining))
+            total_remaining -= len(unprocessed)
+            yield unprocessed
+
+    async def identity_handler_unknown_body_length(logger, sock, _, unprocessed):
+        logger.debug('Unknown incoming body length')
+        if unprocessed:
+            yield unprocessed
+
+        unprocessed = None  # So can be garbage collected
+
+        try:
+            while True:
+                yield await recv(loop, sock, socket_timeout, recv_bufsize)
+        except HttpConnectionClosedError:
+            pass
+
+    async def chunked_handler(_, sock, __, unprocessed):
+        while True:
+            # Fetch until have chunk header
+            while b'\r\n' not in unprocessed:
+                if len(unprocessed) >= max_header_length:
+                    raise HttpHeaderTooLong()
+                unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
+
+            # Find chunk length
+            chunk_header_end = unprocessed.index(b'\r\n')
+            chunk_header_hex = unprocessed[:chunk_header_end]
+            chunk_length = int(chunk_header_hex, 16)
+
+            # End of body signalled by a 0-length chunk
+            if chunk_length == 0:
+                while b'\r\n\r\n' not in unprocessed:
+                    if len(unprocessed) >= max_header_length:
+                        raise HttpHeaderTooLong()
+                    unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
+
+                break
+
+            # Remove chunk header
+            unprocessed = unprocessed[chunk_header_end + 2:]
+
+            # Yield whatever amount of chunk we have already, which
+            # might be nothing
+            chunk_remaining = chunk_length
+            in_chunk, unprocessed = \
+                unprocessed[:chunk_remaining], unprocessed[chunk_remaining:]
+            if in_chunk:
+                yield in_chunk
+            chunk_remaining -= len(in_chunk)
+
+            # Fetch and yield rest of chunk
+            while chunk_remaining:
+                unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
+                in_chunk, unprocessed = \
+                    unprocessed[:chunk_remaining], unprocessed[chunk_remaining:]
+                chunk_remaining -= len(in_chunk)
+                yield in_chunk
+
+            # Fetch until have chunk footer, and remove
+            while len(unprocessed) < 2:
+                unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
+            unprocessed = unprocessed[2:]
 
     async def close(
             get_logger_adapter=get_logger_adapter,
@@ -373,96 +460,6 @@ def Pool(
         pool.clear()
 
     return request, close
-
-
-def identity_handler(logger, loop, sock, socket_timeout, recv_bufsize,
-                     method, response_headers, connection, unprocessed):
-    response_headers_dict = dict(response_headers)
-    body_length = \
-        0 if method == b'HEAD' else \
-        0 if connection == b'keep-alive' and b'content-length' not in response_headers_dict else \
-        None if b'content-length' not in response_headers_dict else \
-        int(response_headers_dict[b'content-length'])
-    return \
-        identity_handler_known_body_length(
-            logger, loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed) \
-        if body_length is not None else \
-        identity_handler_unknown_body_length(
-            logger, loop, sock, socket_timeout, recv_bufsize, unprocessed)
-
-
-async def identity_handler_known_body_length(
-        logger, loop, sock, socket_timeout, recv_bufsize, body_length, unprocessed):
-    logger.debug('Expected incoming body bytes: %s', body_length)
-    total_remaining = body_length
-
-    if unprocessed and total_remaining:
-        total_remaining -= len(unprocessed)
-        yield unprocessed
-
-    while total_remaining:
-        unprocessed = None  # So can be garbage collected
-        unprocessed = await recv(loop, sock, socket_timeout, min(recv_bufsize, total_remaining))
-        total_remaining -= len(unprocessed)
-        yield unprocessed
-
-
-async def identity_handler_unknown_body_length(
-        logger, loop, sock, socket_timeout, recv_bufsize, unprocessed):
-    logger.debug('Unknown incoming body length')
-    if unprocessed:
-        yield unprocessed
-
-    unprocessed = None  # So can be garbage collected
-
-    try:
-        while True:
-            yield await recv(loop, sock, socket_timeout, recv_bufsize)
-    except HttpConnectionClosedError:
-        pass
-
-
-async def chunked_handler(_, loop, sock, socket_timeout, recv_bufsize, __, ___, ____, unprocessed):
-    while True:
-        # Fetch until have chunk header
-        while b'\r\n' not in unprocessed:
-            unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
-
-        # Find chunk length
-        chunk_header_end = unprocessed.index(b'\r\n')
-        chunk_header_hex = unprocessed[:chunk_header_end]
-        chunk_length = int(chunk_header_hex, 16)
-
-        # End of body signalled by a 0-length chunk
-        if chunk_length == 0:
-            while b'\r\n\r\n' not in unprocessed:
-                unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
-            break
-
-        # Remove chunk header
-        unprocessed = unprocessed[chunk_header_end + 2:]
-
-        # Yield whatever amount of chunk we have already, which
-        # might be nothing
-        chunk_remaining = chunk_length
-        in_chunk, unprocessed = \
-            unprocessed[:chunk_remaining], unprocessed[chunk_remaining:]
-        if in_chunk:
-            yield in_chunk
-        chunk_remaining -= len(in_chunk)
-
-        # Fetch and yield rest of chunk
-        while chunk_remaining:
-            unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
-            in_chunk, unprocessed = \
-                unprocessed[:chunk_remaining], unprocessed[chunk_remaining:]
-            chunk_remaining -= len(in_chunk)
-            yield in_chunk
-
-        # Fetch until have chunk footer, and remove
-        while len(unprocessed) < 2:
-            unprocessed += await recv(loop, sock, socket_timeout, recv_bufsize)
-        unprocessed = unprocessed[2:]
 
 
 async def send_all(loop, sock, socket_timeout, data):
