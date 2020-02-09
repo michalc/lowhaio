@@ -482,7 +482,7 @@ async def send_all(loop, sock, socket_timeout, data):
             latest_num_bytes = sock.send(data_memoryview[total_num_bytes:])
         except (BlockingIOError, ssl.SSLWantWriteError):
             pass
-        except BaseException as exception:
+        except Exception as exception:
             loop.remove_writer(fileno)
             if not result.done():
                 result.set_exception(exception)
@@ -527,7 +527,7 @@ async def _recv(loop, sock, socket_timeout, recv_bufsize):
             chunk = sock.recv(recv_bufsize)
         except (BlockingIOError, ssl.SSLWantReadError):
             pass
-        except BaseException as exception:
+        except Exception as exception:
             loop.remove_reader(fileno)
             if not result.done():
                 result.set_exception(exception)
@@ -558,7 +558,7 @@ async def tls_complete_handshake(loop, ssl_sock, socket_timeout):
             ssl_sock.do_handshake()
         except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
             reset_timeout()
-        except BaseException as exception:
+        except Exception as exception:
             loop.remove_reader(fileno)
             loop.remove_writer(fileno)
             if not done.done():
