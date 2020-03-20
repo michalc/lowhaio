@@ -252,7 +252,13 @@ def Pool(
             close_callback.cancel()
             del socks[_sock]
 
-            connected_ip = ipaddress.ip_address(_sock.getpeername()[0])
+            try:
+                connected_ip = ipaddress.ip_address(_sock.getpeername()[0])
+            except OSError:
+                logger.debug('Unable to get peer name: %s', _sock)
+                _sock.close()
+                continue
+
             if connected_ip not in ip_addresses:
                 logger.debug('Not current for domain, closing: %s', _sock)
                 _sock.close()
