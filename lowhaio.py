@@ -46,7 +46,9 @@ class HttpLoggerAdapter(logging.LoggerAdapter):
     def process(self, msg, kwargs):
         return \
             ('[http] %s' % (msg,), kwargs) if not self.extra else \
-            ('[http:%s] %s' % (','.join(str(v) for v in self.extra.values()), msg), kwargs)
+            ('[http:%s] %s' % (','.join(
+                str(v).replace('%', '%%') for v in self.extra.values()
+            ), msg), kwargs)
 
 
 def get_logger_adapter_default(extra):

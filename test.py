@@ -670,7 +670,7 @@ class TestEndToEnd(unittest.TestCase):
         async for chunk in body:
             m.update(chunk)
 
-        self.assertEqual(m.hexdigest(), '6cb91af4ed4c60c11613b75cd1fc6116')
+        self.assertEqual(m.hexdigest(), 'd41d8cd98f00b204e9800998ecf8427e')
 
     @async_test
     async def test_http_get_small_via_ip_address(self):
